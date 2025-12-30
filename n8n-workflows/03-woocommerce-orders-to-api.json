@@ -1,0 +1,260 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "event": "order.updated"
+      },
+      "id": "04025a2a-de95-4473-bc8c-6af50a39bef5",
+      "name": "On Order Updated",
+      "type": "n8n-nodes-base.wooCommerceTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1664,
+        496
+      ],
+      "webhookId": "woocommerce-order-updated",
+      "credentials": {
+        "wooCommerceApi": {
+          "id": "6kK1yOwSju8g0pa4",
+          "name": "WooCommerce account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "status-check",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "processing",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ecd0ac90-1a4d-4741-9659-0bf83c7a0a4a",
+      "name": "Filter Paid & Unfulfilled Orders",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -1440,
+        496
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Transform WooCommerce order to JTL FFN Outbound API format\nconst order = $input.first().json;\n\n// ⚠️ CONFIGURATION: Set your JTL FFN Warehouse ID here\n// You can get this from your JTL FFN dashboard or API GET /api/v1/merchant/warehouses\nconst WAREHOUSE_ID = \"PPBT04DE-76761-0001\"; // Your No Limits Fulfillment warehouse\n\n// Process line items according to JTL FFN CreateOutboundItemRequest schema\nconst items = [];\nfor (const item of order.line_items || []) {\n  const outboundItem = {\n    \"outboundItemId\": item.id.toString(), // Required: unique identifier for this item\n    \"merchantSku\": item.sku || item.product_id.toString(), // Either jfsku or merchantSku required\n    \"quantity\": item.quantity, // Required\n    \"name\": item.name, // Optional: product name\n    \"price\": parseFloat(item.price || 0), // Optional: for insurance/customs\n    \"vat\": parseFloat(item.total_tax || 0) // Optional: VAT amount\n  };\n  items.push(outboundItem);\n}\n\nconst shippingAddress = order.shipping || {};\nconst billingAddress = order.billing || {};\n\n// Map WooCommerce status to JTL FFN outbound status\n// For NEW outbounds, only 'Preparation' or 'Pending' are allowed\n// We'll use 'Pending' for most statuses as it means \"ready to be processed\"\nfunction mapStatus(wooStatus) {\n  const statusMap = {\n    'pending': 'Pending',\n    'processing': 'Pending', // Changed from 'Acknowledged' - only Pending/Preparation allowed for new outbounds\n    'on-hold': 'Pending',\n    'completed': 'Pending', // Changed - will be updated by fulfiller later\n    'cancelled': 'Pending', // Changed - will need to cancel after creation if needed\n    'refunded': 'Pending',\n    'failed': 'Pending'\n  };\n  return statusMap[wooStatus] || 'Pending';\n}\n\n// Build shipping address according to CreateAddressRequest schema\n// Required fields: city, country, street\nconst jtlShippingAddress = {\n  \"firstname\": shippingAddress.first_name || \"\",\n  \"lastname\": shippingAddress.last_name || \"\",\n  \"company\": shippingAddress.company || null,\n  \"street\": shippingAddress.address_1 || \"No street provided\", // Required - changed from address1\n  \"extraAddressLine\": shippingAddress.address_2 || null, // Additional address line\n  \"city\": shippingAddress.city || \"Unknown\", // Required\n  \"zip\": shippingAddress.postcode || \"\",\n  \"state\": shippingAddress.state || null,\n  \"country\": (shippingAddress.country || \"DE\").substring(0, 2).toUpperCase(), // Required: ISO 3166 alpha-2\n  \"email\": billingAddress.email || null,\n  \"phone\": shippingAddress.phone || billingAddress.phone || null\n};\n\n// Build the outbound request according to CreateOutboundRequest schema\nconst outboundRequest = {\n  // Required fields\n  \"merchantOutboundNumber\": order.id.toString(), // Required: unique order identifier\n  \"warehouseId\": WAREHOUSE_ID, // Required: target warehouse\n  \"currency\": (order.currency || \"EUR\").toUpperCase(), // Required: ISO 4217 alpha (3 chars)\n  \"shippingAddress\": jtlShippingAddress, // Required\n  \"items\": items, // Required: array with at least 1 item\n  \n  // Optional but recommended fields\n  \"status\": mapStatus(order.status), // Defaults to 'Pending' if not set\n  \"externalNumber\": order.number || order.id.toString(), // External reference\n  \"orderValue\": parseFloat(order.total || 0), // Total order value\n  \"shippingFee\": parseFloat(order.shipping_total || 0), // Shipping cost\n  \"salesChannel\": \"WooCommerce\", // Sales channel identifier\n  \"desiredDeliveryDate\": order.date_created || new Date().toISOString(), // When customer wants delivery\n  \"shippingType\": \"Standard\", // Required: Standard, Expedited, NextDay, SecondDay, SameDay, or ByShippingLabelProvider\n  \n  // Optional notes\n  \"externalNote\": order.customer_note || null, // Note for customer (visible on package)\n  \"internalNote\": `WooCommerce Order #${order.number || order.id}\\nPayment: ${order.payment_method || 'N/A'}\\nShipping: ${order.shipping_lines && order.shipping_lines[0] ? order.shipping_lines[0].method_title : 'N/A'}` // Internal note for fulfiller\n};\n\nreturn [{ json: outboundRequest }];"
+      },
+      "id": "ea93bec2-180f-4a00-bbed-5140261a42d4",
+      "name": "Transform Order Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1216,
+        496
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://ffn.api.jtl-software.com/api/v1/merchant/outbounds",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json}}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "1b120379-0f1d-447a-86e2-cc126b7386d1",
+      "name": "Send Order to JTL FFN API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -992,
+        496
+      ],
+      "credentials": {
+        "oAuth2Api": {
+          "id": "sXkCnnZQmB7fvPro",
+          "name": "JTL oauth Lukas Ehmer"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const merchantOutboundNumber = $input.first().json.merchantOutboundNumber || 'unknown';\nconst externalNumber = $input.first().json.externalNumber || 'N/A';\n\nconst successLog = {\n  \"timestamp\": new Date().toISOString(),\n  \"merchantOutboundNumber\": merchantOutboundNumber,\n  \"externalNumber\": externalNumber,\n  \"platform\": \"woocommerce\",\n  \"action\": \"synced_to_jtl_ffn\",\n  \"status\": \"success\"\n};\n\nconsole.log('Order synced successfully:', successLog);\n\nreturn [{ json: successLog }];"
+      },
+      "id": "8347ff50-95d5-4882-ace8-c457c9b72c44",
+      "name": "Log Success",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -768,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const merchantOutboundNumber = $input.first().json.merchantOutboundNumber || 'unknown';\nconst error = $input.first().json.error || JSON.stringify($input.first().json);\n\nconst errorLog = {\n  \"timestamp\": new Date().toISOString(),\n  \"merchantOutboundNumber\": merchantOutboundNumber,\n  \"platform\": \"woocommerce\",\n  \"action\": \"sync_failed\",\n  \"error\": error,\n  \"fullData\": $input.first().json\n};\n\nconsole.error('Order sync failed:', errorLog);\n\nreturn [{ json: errorLog }];"
+      },
+      "id": "8a2a5c78-a627-4df4-ab49-717c93226ffe",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -768,
+        688
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Store order ID mapping for later tracking updates\nconst wooOrderId = $input.first().json.merchantOutboundNumber; // WooCommerce order ID\nconst jtlOutboundId = $input.first().json.outboundId || $input.first().json.id; // JTL FFN outbound ID from response\n\nconst mapping = {\n  \"woocommerceOrderId\": wooOrderId,\n  \"jtlOutboundId\": jtlOutboundId,\n  \"syncedAt\": new Date().toISOString(),\n  \"status\": \"synced\"\n};\n\n// In production, store this in a database or n8n's static data\nconsole.log('Order mapping created:', mapping);\n\nreturn [{ json: mapping }];"
+      },
+      "id": "1db4c4cb-c62e-41f6-a8c2-2a7ba3532387",
+      "name": "Store Order Mapping",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -768,
+        496
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "order",
+        "operation": "update",
+        "orderId": "={{$json[\"woocommerceOrderId\"]}}",
+        "updateFields": {
+          "customerNote": "Order synced to JTL FFN API at {{new Date().toISOString()}}"
+        },
+        "billingUi": {},
+        "couponLinesUi": {},
+        "feeLinesUi": {},
+        "lineItemsUi": {},
+        "metadataUi": {},
+        "shippingUi": {},
+        "shippingLinesUi": {}
+      },
+      "id": "99def36e-fe60-4adb-9311-cb44a7dce8e0",
+      "name": "Add Note to WooCommerce Order",
+      "type": "n8n-nodes-base.wooCommerce",
+      "typeVersion": 1,
+      "position": [
+        -544,
+        496
+      ],
+      "credentials": {
+        "wooCommerceApi": {
+          "id": "6kK1yOwSju8g0pa4",
+          "name": "WooCommerce account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "content": "## WooCommerce Orders → JTL FFN API\n\n**Purpose**: Sync PAID & UNFULFILLED orders from WooCommerce to JTL FFN API\n\n**Trigger**: Real-time webhook when order is UPDATED\n\n**Flow**:\n1. Webhook fires when WooCommerce order is updated\n2. Filter: Only process orders with status 'processing' (= PAID + NOT YET SHIPPED)\n3. Transform to JTL FFN format\n4. Send to API\n5. Log success/errors\n6. Store order ID mapping\n7. Update WooCommerce with sync note\n\n**Error Handling**: \n- Continues on error\n- 3 automatic retries\n- Comprehensive logging\n\n**Why Only 'processing' Status?**:\n- German customers often pay by bank transfer (takes 3-4 days)\n- Order sits in 'pending' or 'on-hold' status during this time\n- When payment clears, status changes to 'processing' = PAID + AWAITING FULFILLMENT\n- When order is shipped, status changes to 'completed' = ALREADY FULFILLED (don't send!)\n- We only send orders that are PAID but NOT YET SHIPPED\n- JTL FFN will fulfill them and update tracking\n\n**Status Logic**:\n- ✅ 'processing' = PAID + UNFULFILLED → SEND TO JTL FFN\n- ❌ 'pending' = UNPAID → BLOCK\n- ❌ 'on-hold' = PAYMENT NOT CONFIRMED → BLOCK\n- ❌ 'completed' = ALREADY FULFILLED → BLOCK\n- ❌ 'failed', 'cancelled', 'refunded', 'draft' → BLOCK\n\n**Credentials Needed**:\n- WooCommerce API credentials\n- JTL FFN API authentication",
+        "height": 1154,
+        "width": 350
+      },
+      "id": "30d8e006-803e-4a0e-ae76-c8e56e476898",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -2128,
+        -96
+      ]
+    }
+  ],
+  "connections": {
+    "On Order Updated": {
+      "main": [
+        [
+          {
+            "node": "Filter Paid & Unfulfilled Orders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Paid & Unfulfilled Orders": {
+      "main": [
+        [
+          {
+            "node": "Transform Order Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform Order Data": {
+      "main": [
+        [
+          {
+            "node": "Send Order to JTL FFN API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Order to JTL FFN API": {
+      "main": [
+        [
+          {
+            "node": "Store Order Mapping",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Order Mapping": {
+      "main": [
+        [
+          {
+            "node": "Add Note to WooCommerce Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "923562b6e5c9b7345019a0c847b18dcbbb522ef8ae30ba6cde59400a4e3f061c"
+  }
+}

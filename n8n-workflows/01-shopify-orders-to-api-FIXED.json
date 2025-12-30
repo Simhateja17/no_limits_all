@@ -1,0 +1,206 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "event": "orders/paid"
+      },
+      "id": "fa5a2055-4370-4d0c-8bb4-46dd4357a715",
+      "name": "On Order Paid",
+      "type": "n8n-nodes-base.shopifyTrigger",
+      "typeVersion": 1,
+      "position": [
+        496,
+        256
+      ],
+      "webhookId": "shopify-order-paid",
+      "credentials": {
+        "shopifyOAuth2Api": {
+          "id": "jHMiStXWMZEpuAfw",
+          "name": "Shopify account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json[\"fulfillment_status\"]}}",
+              "operation": "notEqual",
+              "value2": "fulfilled"
+            }
+          ]
+        }
+      },
+      "id": "175630bf-a44b-40c5-b8bf-ee8992bf4141",
+      "name": "Filter Unfulfilled Orders",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        944,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Transform Shopify order to JTL FFN Outbound API format\nconst order = $input.first().json;\n\n// ⚠️ CONFIGURATION: Set your JTL FFN Warehouse ID here\nconst WAREHOUSE_ID = \"PPBT04DE-76761-0001\"; // Your No Limits Fulfillment warehouse\n\n// Process line items according to JTL FFN CreateOutboundItemRequest schema\nconst items = [];\nfor (const item of order.line_items || []) {\n  const outboundItem = {\n    \"outboundItemId\": item.id.toString(),\n    \"merchantSku\": item.sku || item.product_id.toString(),\n    \"quantity\": item.quantity,\n    \"name\": item.title || item.name,\n    \"price\": parseFloat(item.price || 0),\n    \"vat\": parseFloat(item.tax_lines && item.tax_lines[0] ? item.tax_lines[0].price : 0)\n  };\n  items.push(outboundItem);\n}\n\nconst shippingAddress = order.shipping_address || {};\nconst billingAddress = order.billing_address || order.shipping_address || {};\n\n// Build shipping address according to CreateAddressRequest schema\nconst jtlShippingAddress = {\n  \"firstname\": shippingAddress.first_name || \"\",\n  \"lastname\": shippingAddress.last_name || \"\",\n  \"company\": shippingAddress.company || null,\n  \"street\": shippingAddress.address1 || \"No street provided\",\n  \"extraAddressLine\": shippingAddress.address2 || null,\n  \"city\": shippingAddress.city || \"Unknown\",\n  \"zip\": shippingAddress.zip || \"\",\n  \"state\": shippingAddress.province || null,\n  \"country\": (shippingAddress.country_code || \"DE\").substring(0, 2).toUpperCase(),\n  \"email\": order.email || null,\n  \"phone\": shippingAddress.phone || billingAddress.phone || null\n};\n\n// Build the outbound request\nconst outboundRequest = {\n  \"merchantOutboundNumber\": order.id.toString(),\n  \"warehouseId\": WAREHOUSE_ID,\n  \"currency\": (order.currency || \"EUR\").toUpperCase(),\n  \"shippingAddress\": jtlShippingAddress,\n  \"items\": items,\n  \"status\": \"Pending\",\n  \"externalNumber\": order.order_number || order.id.toString(),\n  \"orderValue\": parseFloat(order.total_price || 0),\n  \"shippingFee\": parseFloat(order.total_shipping_price_set ? order.total_shipping_price_set.shop_money.amount : 0),\n  \"salesChannel\": \"Shopify\",\n  \"desiredDeliveryDate\": order.created_at || new Date().toISOString(),\n  \"shippingType\": \"Standard\",\n  \"externalNote\": order.note || null,\n  \"internalNote\": `Shopify Order #${order.order_number || order.id}\\nFinancial Status: ${order.financial_status || 'N/A'}\\nShipping: ${order.shipping_lines && order.shipping_lines[0] ? order.shipping_lines[0].title : 'N/A'}`\n};\n\nreturn [{ json: outboundRequest }];"
+      },
+      "id": "69d366cd-e198-46f4-9a8e-6480b1d7c6b6",
+      "name": "Transform Order Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1168,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://ffn.api.jtl-software.com/api/v1/merchant/outbounds",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json}}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "01afab9c-a863-478d-be67-642f9e5a50d8",
+      "name": "Send Order to JTL FFN API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1392,
+        256
+      ],
+      "credentials": {
+        "oAuth2Api": {
+          "id": "sXkCnnZQmB7fvPro",
+          "name": "JTL oauth Lukas Ehmer"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst merchantOutboundNumber = data.merchantOutboundNumber || 'unknown';\n\nconst successLog = {\n  timestamp: new Date().toISOString(),\n  merchantOutboundNumber: merchantOutboundNumber,\n  platform: 'shopify',\n  action: 'synced_to_jtl_ffn',\n  status: 'success'\n};\n\nconsole.log('Order synced successfully:', successLog);\n\nreturn [{ json: successLog }];"
+      },
+      "id": "99f467c9-062a-4ade-b14d-89727c6a484f",
+      "name": "Log Success",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1616,
+        64
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst merchantOutboundNumber = data.merchantOutboundNumber || 'unknown';\nconst error = data.error || $input.first().json;\n\nconst errorLog = {\n  timestamp: new Date().toISOString(),\n  merchantOutboundNumber: merchantOutboundNumber,\n  platform: 'shopify',\n  action: 'sync_failed',\n  error: error,\n  fullData: data\n};\n\nconsole.error('Order sync failed:', errorLog);\n\nreturn [{ json: errorLog }];"
+      },
+      "id": "7ee107e8-5e69-486d-8536-99de4f623853",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1616,
+        448
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Store order ID mapping for later tracking updates\nconst shopifyOrderId = $input.first().json.merchantOutboundNumber;\nconst jtlOutboundId = $input.first().json.outboundId || $input.first().json.id;\n\nconst mapping = {\n  shopifyOrderId: shopifyOrderId,\n  jtlOutboundId: jtlOutboundId,\n  syncedAt: new Date().toISOString(),\n  status: 'synced'\n};\n\nconsole.log('Order mapping created:', mapping);\n\nreturn [{ json: mapping }];"
+      },
+      "id": "cf32f0b2-c31d-4c44-ac3a-6fefdb30cf13",
+      "name": "Store Order Mapping",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1616,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Shopify Orders → JTL FFN API\n\n**Purpose**: Sync PAID orders from Shopify to JTL FFN API\n\n**Trigger**: Real-time webhook when order is PAID\n\n**Flow**:\n1. Webhook fires when Shopify order is paid (even if 3-4 days after creation for bank transfers)\n2. Filter out already fulfilled orders\n3. Transform to JTL FFN format\n4. Send to API\n5. Log success/errors\n6. Store order ID mapping\n\n**Error Handling**: \n- Continues on error\n- Logs all failures\n- Retry logic built into HTTP node\n\n**Why \"On Order Paid\"?**:\n- German customers often pay by bank transfer (takes 3-4 days)\n- We only send orders to warehouse AFTER payment is confirmed\n- Avoids sending unpaid orders\n\n**Credentials Needed**:\n- Shopify API credentials\n- JTL FFN OAuth2 authentication",
+        "height": 400,
+        "width": 350
+      },
+      "id": "adff6447-9e47-4aa2-a68d-bcbc240ac0c9",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        64,
+        112
+      ]
+    }
+  ],
+  "connections": {
+    "On Order Paid": {
+      "main": [
+        [
+          {
+            "node": "Filter Unfulfilled Orders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Unfulfilled Orders": {
+      "main": [
+        [
+          {
+            "node": "Transform Order Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Transform Order Data": {
+      "main": [
+        [
+          {
+            "node": "Send Order to JTL FFN API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Order to JTL FFN API": {
+      "main": [
+        [
+          {
+            "node": "Store Order Mapping",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "923562b6e5c9b7345019a0c847b18dcbbb522ef8ae30ba6cde59400a4e3f061c"
+  }
+}

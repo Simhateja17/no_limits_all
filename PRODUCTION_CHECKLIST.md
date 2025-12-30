@@ -66,7 +66,7 @@
 
 1. **Go to Vercel Dashboard**
    - Visit: https://vercel.com/dashboard
-   - Select your project: `no-limits-jade`
+   - Select your project: `no-limits-seven`
 
 2. **Add Environment Variable**
    - Settings → Environment Variables
@@ -86,7 +86,7 @@
 ### Step 3: Test the Full Stack
 
 1. **Visit Your Frontend**
-   - Go to: https://no-limits-jade.vercel.app/
+   - Go to: https://no-limits-seven.vercel.app/
 
 2. **Test Login**
    - Email: `superadmin@nolimits.com`
@@ -110,7 +110,7 @@
 If you get CORS errors:
 1. Go to Render dashboard
 2. Update `FRONTEND_URL` environment variable
-3. Make sure it's: `https://no-limits-jade.vercel.app` (no trailing slash)
+3. Make sure it's: `https://no-limits-seven.vercel.app` (no trailing slash)
 4. Manual Deploy → Deploy latest commit
 
 ### Monitor Logs
@@ -135,7 +135,7 @@ DATABASE_URL=postgresql://postgres:[PASSWORD]@db.ydzikxftogcggykkoetu.supabase.c
 SUPABASE_URL=https://ydzikxftogcggykkoetu.supabase.co
 SUPABASE_ANON_KEY=eyJhbGci...
 SUPABASE_SERVICE_ROLE_KEY=eyJhbGci...
-FRONTEND_URL=https://no-limits-jade.vercel.app
+FRONTEND_URL=https://no-limits-seven.vercel.app
 JWT_SECRET=[GENERATED_SECRET]
 JWT_EXPIRES_IN=7d
 JWT_REFRESH_SECRET=[GENERATED_SECRET_2]

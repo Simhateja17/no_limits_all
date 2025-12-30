@@ -1,0 +1,107 @@
+{
+  "name": "Manual Product Sync - Single Product",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "When clicking 'Test workflow'",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "resource": "product",
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 10,
+        "options": {
+          "sku": "SKU12334"
+        }
+      },
+      "id": "get-single-product",
+      "name": "Get Product by SKU",
+      "type": "n8n-nodes-base.wooCommerce",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "credentials": {
+        "wooCommerceApi": {
+          "id": "6kK1yOwSju8g0pa4",
+          "name": "WooCommerce account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Transform WooCommerce product to JTL FFN CreateProductRequest format\nconst product = $input.first().json;\n\n// Helper function to safely get nested values\nfunction safeGet(obj, path, defaultValue) {\n  if (!obj) return defaultValue;\n  const keys = path.split('.');\n  let result = obj;\n  for (const key of keys) {\n    if (result && result[key] !== undefined) {\n      result = result[key];\n    } else {\n      return defaultValue;\n    }\n  }\n  return result !== undefined ? result : defaultValue;\n}\n\n// Build identifier object (at least one identifier required)\nconst identifier = {\n  ean: safeGet(product, 'sku', null), // Using SKU as EAN for now\n};\n\n// Build dimensions (convert from cm to meters for JTL FFN)\nconst dimensions = product.dimensions || {};\nconst length = dimensions.length ? parseFloat(dimensions.length) / 100 : 0;\nconst width = dimensions.width ? parseFloat(dimensions.width) / 100 : 0;\nconst height = dimensions.height ? parseFloat(dimensions.height) / 100 : 0;\n\n// Build attributes array (key/value pairs)\nconst attributes = [];\n\n// Add platform info\nattributes.push({\n  key: 'platform',\n  value: 'woocommerce'\n});\n\n// Add external product ID\nattributes.push({\n  key: 'externalProductId',\n  value: product.id ? product.id.toString() : ''\n});\n\n// Add product type\nif (product.type) {\n  attributes.push({\n    key: 'productType',\n    value: product.type\n  });\n}\n\n// Add categories\nif (product.categories && product.categories.length > 0) {\n  const categoryNames = product.categories.map(function(cat) {\n    return cat.name;\n  }).join(', ');\n  attributes.push({\n    key: 'categories',\n    value: categoryNames\n  });\n}\n\n// Build the JTL FFN product request\n// Note: Weight must be > 0, so use 0.1 kg as default if not specified\nconst weight = product.weight && parseFloat(product.weight) > 0 ? parseFloat(product.weight) : 0.1;\n\nconst jtlProduct = {\n  name: product.name || 'Unnamed Product',\n  merchantSku: product.sku || product.id.toString(),\n  identifier: identifier,\n  description: product.description || null,\n  attributes: attributes,\n  weight: weight,\n  length: length || 0.01,\n  width: width || 0.01,\n  height: height || 0.01\n};\n\nreturn [{ json: jtlProduct }];"
+      },
+      "id": "transform-product",
+      "name": "Transform Product Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://ffn.api.jtl-software.com/api/v1/merchant/products",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json}}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "send-to-api",
+      "name": "Send Product to JTL FFN API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 300],
+      "credentials": {
+        "oAuth2Api": {
+          "id": "sXkCnnZQmB7fvPro",
+          "name": "JTL oauth Lukas Ehmer"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "content": "## Manual Product Sync\n\n**How to use:**\n1. Change the SKU in the 'Get Product by SKU' node\n2. Currently set to: SKU12334\n3. Click 'Execute workflow'\n4. Change to SKU238952 and run again\n\n**This will sync both products to JTL FFN**",
+        "height": 300,
+        "width": 350
+      },
+      "id": "sticky-note",
+      "name": "Instructions",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [200, 100]
+    }
+  ],
+  "connections": {
+    "When clicking 'Test workflow'": {
+      "main": [[{
+        "node": "Get Single WooCommerce Product",
+        "type": "main",
+        "index": 0
+      }]]
+    },
+    "Get Single WooCommerce Product": {
+      "main": [[{
+        "node": "Transform Product Data",
+        "type": "main",
+        "index": 0
+      }]]
+    },
+    "Transform Product Data": {
+      "main": [[{
+        "node": "Send Product to JTL FFN API",
+        "type": "main",
+        "index": 0
+      }]]
+    }
+  }
+}
+

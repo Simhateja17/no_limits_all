@@ -1,0 +1,511 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 10
+            }
+          ]
+        }
+      },
+      "id": "bb95d229-586f-4acb-9b40-fab78d02e0e3",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        1344,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://ffn.api.jtl-software.com/api/v1/merchant/outbounds",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "status",
+              "value": "Shipped,Completed"
+            },
+            {
+              "name": "limit",
+              "value": "100"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "83d7428c-d3ba-4523-b8b5-ba676dbece38",
+      "name": "Get Orders from JTL FFN API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1568,
+        48
+      ],
+      "credentials": {
+        "oAuth2Api": {
+          "id": "sXkCnnZQmB7fvPro",
+          "name": "JTL oauth Lukas Ehmer"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract orders from API response\nconst response = $input.first().json;\n\n// JTL FFN API returns paginated results with 'items' array\nlet orders = [];\n\nif (response.items && Array.isArray(response.items)) {\n  orders = response.items;\n} else if (response.data && Array.isArray(response.data)) {\n  orders = response.data;\n} else if (Array.isArray(response)) {\n  orders = response;\n}\n\n// Return items in n8n format\nif (orders.length > 0) {\n  return orders.map(order => ({ json: order }));\n} else {\n  console.log('No orders found in response');\n  return [];\n}"
+      },
+      "id": "03dd967a-c2ac-4f4f-97bd-dfa3494712cc",
+      "name": "Split Orders",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2016,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://ffn.api.jtl-software.com/api/v1/merchant/outbounds/shipping-notifications/updates",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "1740cbc1-5fa0-4d89-97fe-2f439872e471",
+      "name": "Get Shipping Notifications",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1792,
+        144
+      ],
+      "credentials": {
+        "oAuth2Api": {
+          "id": "sXkCnnZQmB7fvPro",
+          "name": "JTL oauth Lukas Ehmer"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract shipping notifications from API response\nconst response = $input.first().json;\n\nlet notifications = [];\n\nif (response.items && Array.isArray(response.items)) {\n  notifications = response.items;\n} else if (response.data && Array.isArray(response.data)) {\n  notifications = response.data;\n} else if (Array.isArray(response)) {\n  notifications = response;\n}\n\n// Return items in n8n format\nif (notifications.length > 0) {\n  return notifications.map(notif => ({ json: notif }));\n} else {\n  console.log('No shipping notifications found');\n  return [];\n}"
+      },
+      "id": "500625a3-6139-4304-9a3b-f890b9c2b916",
+      "name": "Split Shipping Notifications",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2016,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "mergeByFields": {
+          "values": [
+            {
+              "field1": "outboundId",
+              "field2": "outboundId"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "47dec4fd-3fa1-4b90-9938-8aee926cad44",
+      "name": "Merge Orders with Tracking",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [
+        2240,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter orders by salesChannel - only Shopify orders that are shipped with tracking\nconst allOrders = $input.all();\nconst filteredOrders = [];\n\nfor (const item of allOrders) {\n  const order = item.json;\n  \n  // Check if order has salesChannel field\n  let isShopify = false;\n  \n  // Check salesChannel field (orders use salesChannel, not platform)\n  if (order.salesChannel === 'Shopify') {\n    isShopify = true;\n  } else if (order.platform === 'shopify') {\n    // Fallback: check platform field if salesChannel not available\n    isShopify = true;\n  }\n  \n  // Check if order is shipped\n  const isShipped = order.status === 'Shipped' || order.status === 'Completed';\n  \n  // Extract tracking from packages array (from merged shipping notification)\n  let trackingNumber = null;\n  if (order.packages && Array.isArray(order.packages) && order.packages.length > 0) {\n    const pkg = order.packages[0];\n    if (pkg.identifier && Array.isArray(pkg.identifier) && pkg.identifier.length > 0) {\n      const trackingId = pkg.identifier.find(id => id.identifierType === 'TrackingId');\n      if (trackingId && trackingId.value) {\n        trackingNumber = trackingId.value;\n      }\n    }\n  }\n  \n  // Add trackingNumber and shopifyStoreDomain to order object for downstream nodes\n  if (trackingNumber) {\n    order.trackingNumber = trackingNumber;\n  }\n  \n  // Add Shopify store domain (hardcoded for now - TODO: make configurable)\n  order.shopifyStoreDomain = 'nolimitstestshop.myshopify.com';\n  \n  const hasTracking = !!trackingNumber;\n  \n  if (isShopify && isShipped && hasTracking) {\n    console.log(`Order ${order.merchantOutboundNumber} is a Shopify order with tracking ${trackingNumber} - processing`);\n    filteredOrders.push({ json: order });\n  } else {\n    if (!isShopify) {\n      console.log(`Order ${order.merchantOutboundNumber} is NOT a Shopify order (salesChannel: ${order.salesChannel}) - skipping`);\n    } else if (!isShipped) {\n      console.log(`Order ${order.merchantOutboundNumber} is Shopify but status is ${order.status} (not Shipped/Completed) - skipping`);\n    } else if (!hasTracking) {\n      console.log(`Order ${order.merchantOutboundNumber} is Shopify and shipped but has no tracking info in packages array - skipping`);\n    }\n  }\n}\n\nreturn filteredOrders;"
+      },
+      "id": "55f2a1be-df4c-4c8e-9906-2640b8ea5565",
+      "name": "Filter Shopify Orders with Tracking",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2464,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://nolimitstestshop.myshopify.com/admin/api/2025-01/orders/{{$json[\"merchantOutboundNumber\"]}}/fulfillment_orders.json",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "shopifyOAuth2Api",
+        "options": {}
+      },
+      "id": "155a5243-6b93-49a1-9405-d6d67f1ecafa",
+      "name": "Get Fulfillment Orders",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        2688,
+        -16
+      ],
+      "credentials": {
+        "shopifyOAuth2Api": {
+          "id": "mm5CsYYwOzCKkjSX",
+          "name": "Shopify account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      },
+      "id": "fe8413ff-9ccc-4403-b031-79fdb0a94ded",
+      "name": "Preserve Order Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [
+        2912,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Prepare GraphQL mutation payload for fulfillmentCreate\nconst data = $input.item.json;\n\n// Get the first fulfillment order\nconst fulfillmentOrder = data.fulfillment_orders?.[0];\n\nif (!fulfillmentOrder) {\n  console.log(`Order ${data.merchantOutboundNumber} - No fulfillment order found, skipping`);\n  return { json: {} };\n}\n\n// Check if fulfillment order is already closed or has no fulfillable quantity\nif (fulfillmentOrder.status === 'closed') {\n  console.log(`Order ${data.merchantOutboundNumber} - Fulfillment order already closed (status: ${fulfillmentOrder.status}), skipping`);\n  return { json: {} };\n}\n\n// Check if there are items that can be fulfilled\nconst hasFulfillableItems = fulfillmentOrder.line_items.some(item => item.fulfillable_quantity > 0);\nif (!hasFulfillableItems) {\n  console.log(`Order ${data.merchantOutboundNumber} - No fulfillable items (all quantities are 0), skipping`);\n  return { json: {} };\n}\n\n// Validate tracking number exists\nif (!data.trackingNumber) {\n  console.log(`Order ${data.merchantOutboundNumber} - Missing tracking number, skipping`);\n  return { json: {} };\n}\n\n// Map line items to the format required by GraphQL (correct field name: fulfillmentOrderLineItems)\nconst fulfillmentOrderLineItems = fulfillmentOrder.line_items.map(lineItem => ({\n  id: `gid://shopify/FulfillmentOrderLineItem/${lineItem.id}`,\n  quantity: lineItem.quantity\n}));\n\n// Build tracking info object - only include url if it's valid\nconst trackingInfo = {\n  company: data.carrier || 'DHL',\n  number: data.trackingNumber\n};\n\n// Only add url if it exists and is valid (has scheme)\nif (data.trackingUrl && data.trackingUrl.startsWith('http')) {\n  trackingInfo.url = data.trackingUrl;\n}\n\n// Build the GraphQL mutation payload\nconst graphqlPayload = {\n  query: `mutation fulfillmentCreate($fulfillment: FulfillmentInput!) {\n    fulfillmentCreate(fulfillment: $fulfillment) {\n      fulfillment {\n        id\n        status\n        trackingInfo {\n          company\n          number\n          url\n        }\n      }\n      userErrors {\n        field\n        message\n      }\n    }\n  }`,\n  variables: {\n    fulfillment: {\n      lineItemsByFulfillmentOrder: [{\n        fulfillmentOrderId: `gid://shopify/FulfillmentOrder/${fulfillmentOrder.id}`,\n        fulfillmentOrderLineItems: fulfillmentOrderLineItems\n      }],\n      trackingInfo: trackingInfo,\n      notifyCustomer: true\n    }\n  }\n};\n\nconsole.log(`Order ${data.merchantOutboundNumber} - GraphQL Payload prepared:`, JSON.stringify(graphqlPayload, null, 2));\n\n// Return the payload along with order info for logging\nreturn {\n  json: {\n    ...data,\n    graphqlPayload: graphqlPayload\n  }\n};"
+      },
+      "id": "7a381796-056c-4f82-9efb-a630dd75619a",
+      "name": "Prepare GraphQL Mutation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3136,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://nolimitstestshop.myshopify.com/admin/api/2025-01/graphql.json",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "shopifyOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json.graphqlPayload}}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "cd4c27ab-3080-4cbb-b874-cc6a159e4b84",
+      "name": "Create Fulfillment with Tracking",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3360,
+        48
+      ],
+      "credentials": {
+        "shopifyOAuth2Api": {
+          "id": "mm5CsYYwOzCKkjSX",
+          "name": "Shopify account 3"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.data?.fulfillmentCreate?.userErrors?.length === 0 ? 'success' : 'failed'}}",
+              "value2": "success"
+            }
+          ]
+        }
+      },
+      "id": "190b7892-fd84-4d76-944c-9f5021bfcad8",
+      "name": "Check if Order Completed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        3584,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "operation": "update",
+        "orderId": "={{$('Prepare GraphQL Mutation').item.json.merchantOutboundNumber}}",
+        "updateFields": {}
+      },
+      "id": "3de57985-fd5b-4f83-9d9c-b3b2c0172e61",
+      "name": "Close Shopify Order",
+      "type": "n8n-nodes-base.shopify",
+      "typeVersion": 1,
+      "position": [
+        3808,
+        240
+      ],
+      "credentials": {
+        "shopifyOAuth2Api": {
+          "id": "mm5CsYYwOzCKkjSX",
+          "name": "Shopify account 3"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://nolimitstestshop.myshopify.com/admin/api/2025-01/orders/{{$('Prepare GraphQL Mutation').item.json.merchantOutboundNumber}}/close.json",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "shopifyOAuth2Api",
+        "options": {}
+      },
+      "id": "5b45e1e1-1895-4844-8dd0-adeae170f366",
+      "name": "Archive Order in Shopify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        4032,
+        240
+      ],
+      "credentials": {
+        "shopifyOAuth2Api": {
+          "id": "mm5CsYYwOzCKkjSX",
+          "name": "Shopify account 3"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const orderId = $input.first().json.merchantOutboundNumber || 'unknown';\nconst trackingNumber = $input.first().json.trackingNumber || 'N/A';\nconst status = $input.first().json.status || 'unknown';\n\nconst successLog = {\n  \"timestamp\": new Date().toISOString(),\n  \"orderId\": orderId,\n  \"trackingNumber\": trackingNumber,\n  \"status\": status,\n  \"action\": \"updated\",\n  \"platform\": \"shopify\"\n};\n\nconsole.log('Order updated successfully:', successLog);\n\nreturn { json: successLog };"
+      },
+      "id": "eaab704f-86f0-49db-b8d7-ee4720f99513",
+      "name": "Log Success",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3584,
+        -144
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const orderId = $input.first().json.merchantOutboundNumber || 'unknown';\nconst error = $input.first().json.error || JSON.stringify($input.first().json);\n\nconst errorLog = {\n  \"timestamp\": new Date().toISOString(),\n  \"orderId\": orderId,\n  \"platform\": \"shopify\",\n  \"action\": \"update_failed\",\n  \"error\": error\n};\n\nconsole.error('Order update failed:', errorLog);\n\n// Optional: Send alert via webhook, email, or Slack\nreturn { json: errorLog };"
+      },
+      "id": "1e03a15b-2a71-4563-a0b7-a110e043362e",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3584,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## JTL FFN API → Shopify Order Updates\n\n**Purpose**: Fetch order updates (tracking, status) from JTL FFN API and update Shopify orders\n\n**Frequency**: Runs every 10 minutes\n\n**Flow**:\n1. Fetch shipped/completed orders from API\n2. Filter Shopify orders with tracking\n3. Add tracking info to Shopify\n4. Close completed orders\n5. Log results\n\n**Features**:\n- Automatic tracking number sync\n- Order closing when completed\n- Customer notifications\n- Error handling & logging\n\n**Credentials Needed**:\n- Shopify API credentials\n- JTL FFN API authentication",
+        "height": 400,
+        "width": 350
+      },
+      "id": "35b3c60c-53ef-42e2-a2bc-158ce47c84f2",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        560,
+        -240
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Orders from JTL FFN API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Orders from JTL FFN API": {
+      "main": [
+        [
+          {
+            "node": "Split Orders",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Shipping Notifications",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Orders": {
+      "main": [
+        [
+          {
+            "node": "Merge Orders with Tracking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Shipping Notifications": {
+      "main": [
+        [
+          {
+            "node": "Split Shipping Notifications",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Shipping Notifications": {
+      "main": [
+        [
+          {
+            "node": "Merge Orders with Tracking",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Orders with Tracking": {
+      "main": [
+        [
+          {
+            "node": "Filter Shopify Orders with Tracking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Shopify Orders with Tracking": {
+      "main": [
+        [
+          {
+            "node": "Get Fulfillment Orders",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Preserve Order Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Get Fulfillment Orders": {
+      "main": [
+        [
+          {
+            "node": "Preserve Order Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preserve Order Data": {
+      "main": [
+        [
+          {
+            "node": "Prepare GraphQL Mutation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare GraphQL Mutation": {
+      "main": [
+        [
+          {
+            "node": "Create Fulfillment with Tracking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Fulfillment with Tracking": {
+      "main": [
+        [
+          {
+            "node": "Check if Order Completed",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Order Completed": {
+      "main": [
+        [
+          {
+            "node": "Close Shopify Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Close Shopify Order": {
+      "main": [
+        [
+          {
+            "node": "Archive Order in Shopify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "923562b6e5c9b7345019a0c847b18dcbbb522ef8ae30ba6cde59400a4e3f061c"
+  }
+}

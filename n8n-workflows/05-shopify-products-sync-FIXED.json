@@ -1,0 +1,257 @@
+{
+  "name": "Shopify Products ↔ JTL FFN API",
+  "nodes": [
+    {
+      "parameters": {
+        "event": "products/update"
+      },
+      "id": "schedule-trigger",
+      "name": "On Product Updated",
+      "type": "n8n-nodes-base.shopifyTrigger",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "shopify-product-updated",
+      "credentials": {
+        "shopifyOAuth2Api": {
+          "id": "SHOPIFY_CREDENTIAL_ID",
+          "name": "Shopify Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Transform Shopify product to JTL FFN CreateProductRequest format\nconst product = $input.first().json;\n\n// Get the first variant for main product data\nconst firstVariant = product.variants && product.variants[0] ? product.variants[0] : {};\n\n// Build identifier object (at least one identifier required)\nconst identifier = {\n  ean: firstVariant.barcode || firstVariant.sku || null\n};\n\n// Build attributes array\nconst attributes = [];\n\nattributes.push({\n  key: 'platform',\n  value: 'shopify'\n});\n\nattributes.push({\n  key: 'externalProductId',\n  value: product.id ? product.id.toString() : ''\n});\n\nif (product.product_type) {\n  attributes.push({\n    key: 'productType',\n    value: product.product_type\n  });\n}\n\nif (product.vendor) {\n  attributes.push({\n    key: 'vendor',\n    value: product.vendor\n  });\n}\n\nif (product.tags) {\n  attributes.push({\n    key: 'tags',\n    value: product.tags\n  });\n}\n\n// Get weight (convert from grams to kg if needed)\nlet weight = firstVariant.weight || 0;\nif (firstVariant.weight_unit === 'g' || firstVariant.weight_unit === 'grams') {\n  weight = weight / 1000;\n} else if (!weight || weight === 0) {\n  weight = 0.1; // Default weight\n}\n\n// Build the JTL FFN product request\nconst jtlProduct = {\n  name: product.title || 'Unnamed Product',\n  merchantSku: firstVariant.sku || product.id.toString(),\n  identifier: identifier,\n  description: product.body_html || null,\n  attributes: attributes,\n  weight: weight,\n  length: 0.01,\n  width: 0.01,\n  height: 0.01\n};\n\nreturn [{ json: jtlProduct }];"
+      },
+      "id": "transform-product",
+      "name": "Transform Product Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://ffn.api.jtl-software.com/api/v1/merchant/products",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json}}",
+        "options": {
+          "timeout": 15000,
+          "retry": {
+            "enabled": true,
+            "maxRetries": 3,
+            "waitBetweenRetries": 2000
+          }
+        }
+      },
+      "id": "send-to-api",
+      "name": "Send Product to JTL FFN API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 300],
+      "credentials": {
+        "oAuth2Api": {
+          "id": "sXkCnnZQmB7fvPro",
+          "name": "JTL oauth Lukas Ehmer"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check if product already exists in API\nconst shopifyProductSku = $input.first().json.variants && $input.first().json.variants[0] ? $input.first().json.variants[0].sku : $input.first().json.id.toString();\n\ntry {\n  const creds = await this.getCredentials('oAuth2Api');\n  const accessToken = creds.oauthTokenData.access_token;\n\n  const response = await this.helpers.httpRequest({\n    method: 'GET',\n    url: `https://ffn.api.jtl-software.com/api/v1/merchant/products?merchantSku=${shopifyProductSku}`,\n    headers: {\n      'Authorization': `Bearer ${accessToken}`,\n    },\n  });\n  \n  if (response && (response.items || response.data) && (response.items || response.data).length > 0) {\n    const productData = (response.items || response.data)[0];\n    return [{ json: { exists: true, jfsku: productData.jfsku, ...productData } }];\n  }\n} catch (error) {\n  console.log('Product does not exist in API, will create new:', error.message);\n}\n\nreturn [{ json: { exists: false } }];"
+      },
+      "id": "check-product-exists",
+      "name": "Check if Product Exists in API",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 150],
+      "credentials": {
+        "oAuth2Api": {
+          "id": "sXkCnnZQmB7fvPro",
+          "name": "JTL oauth Lukas Ehmer"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json[\"exists\"]}}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "product-exists-check",
+      "name": "Product Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [850, 150]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge existing product data with transformed product data (to preserve platform attribute)\nconst existingProduct = $input.first().json; // From \"Product Exists?\" - has jfsku\n\n// Get the transformed product data (with platform attribute)\nlet transformedProduct;\ntry {\n  transformedProduct = $('Transform Product Data').first().json;\n} catch (e) {\n  console.log('Could not get transformed product data:', e.message);\n  transformedProduct = null;\n}\n\n// Merge: Use transformed product data, but keep jfsku from existing product\nconst updatePayload = {\n  ...(transformedProduct || {}),\n  jfsku: existingProduct.jfsku || existingProduct.id, // Use jfsku from existing product\n  // Ensure platform attribute is included\n  attributes: transformedProduct?.attributes || existingProduct.attributes || []\n};\n\n// Make sure platform attribute is present\nif (updatePayload.attributes && Array.isArray(updatePayload.attributes)) {\n  const hasPlatform = updatePayload.attributes.some(attr => attr.key === 'platform');\n  if (!hasPlatform) {\n    updatePayload.attributes.push({\n      key: 'platform',\n      value: 'shopify'\n    });\n  }\n} else {\n  updatePayload.attributes = [{\n    key: 'platform',\n    value: 'shopify'\n  }];\n}\n\nconsole.log('Merged product data for update:', {\n  jfsku: updatePayload.jfsku,\n  hasPlatform: updatePayload.attributes.some(attr => attr.key === 'platform')\n});\n\nreturn [{ json: updatePayload }];"
+      },
+      "id": "merge-for-update",
+      "name": "Merge Product Data for Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 50]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://ffn.api.jtl-software.com/api/v1/merchant/products/{{$json[\"jfsku\"]}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json}}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "update-api-product",
+      "name": "Update Product in API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 50],
+      "credentials": {
+        "oAuth2Api": {
+          "id": "sXkCnnZQmB7fvPro",
+          "name": "JTL oauth Lukas Ehmer"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst merchantSku = data.merchantSku || 'unknown';\nconst name = data.name || 'N/A';\n\nconst successLog = {\n  timestamp: new Date().toISOString(),\n  merchantSku: merchantSku,\n  name: name,\n  platform: 'shopify',\n  action: 'synced_to_jtl_ffn',\n  status: 'success'\n};\n\nconsole.log('Product synced successfully:', successLog);\n\nreturn [{ json: successLog }];"
+      },
+      "id": "log-success",
+      "name": "Log Success",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst merchantSku = data.merchantSku || 'unknown';\nconst error = data.error || $input.first().json;\n\nconst errorLog = {\n  timestamp: new Date().toISOString(),\n  merchantSku: merchantSku,\n  platform: 'shopify',\n  action: 'sync_failed',\n  error: error,\n  fullData: data\n};\n\nconsole.error('Product sync failed:', errorLog);\n\nreturn [{ json: errorLog }];"
+      },
+      "id": "error-handler",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 400]
+    },
+    {
+      "parameters": {
+        "content": "## Shopify Products ↔ JTL FFN API\n\n**Purpose**: Sync products from Shopify to JTL FFN API\n\n**Frequency**: Runs every hour\n\n**Flow**:\n1. Fetch products from Shopify\n2. Check if product exists in API\n3. If exists: Update product (PATCH)\n4. If not: Create new product (POST)\n5. Transform product data with variants\n6. Send to API\n7. Log results\n\n**Features**:\n- Handles product variants\n- Syncs images\n- Product options mapping\n- Inventory data\n- Automatic retry on failure\n- Uses PATCH for updates\n\n**Credentials Needed**:\n- Shopify API credentials\n- JTL FFN OAuth2 authentication",
+        "height": 500,
+        "width": 350
+      },
+      "id": "sticky-note",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [200, 50]
+    }
+  ],
+  "connections": {
+    "On Product Updated": {
+      "main": [
+        [
+          {
+            "node": "Transform Product Data",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check if Product Exists in API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform Product Data": {
+      "main": [
+        [
+          {
+            "node": "Send Product to JTL FFN API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Product to JTL FFN API": {
+      "main": [
+        [
+          {
+            "node": "Log Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Product Exists in API": {
+      "main": [
+        [
+          {
+            "node": "Product Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Product Exists?": {
+      "main": [
+        [
+          {
+            "node": "Merge Product Data for Update",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Merge Product Data for Update": {
+      "main": [
+        [
+          {
+            "node": "Update Product in API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Product in API": {
+      "main": [
+        [
+          {
+            "node": "Log Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
+

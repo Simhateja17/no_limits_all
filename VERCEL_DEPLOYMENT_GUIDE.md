@@ -6,7 +6,7 @@ This guide explains how to properly deploy the No Limits application on Vercel w
 
 If you're seeing CORS errors like:
 ```
-Access to fetch at 'https://no-limits-backend.onrender.com/api/auth/login' from origin 'https://no-limits-jade.vercel.app'
+Access to fetch at 'https://no-limits-backend.onrender.com/api/auth/login' from origin 'https://no-limits-seven.vercel.app'
 has been blocked by CORS policy: Response to preflight request doesn't pass access control check:
 No 'Access-Control-Allow-Origin' header is present on the requested resource.
 ```
@@ -18,7 +18,7 @@ This is because the frontend is trying to connect to an old/incorrect backend UR
 ### Frontend Deployment (Vercel)
 
 1. Go to your Vercel dashboard: https://vercel.com/dashboard
-2. Select your frontend project: `no-limits-jade` (or whatever your project is named)
+2. Select your frontend project: `no-limits-seven` (or whatever your project is named)
 3. Go to **Settings** → **Environment Variables**
 4. Add/Update the following environment variable:
 
@@ -42,7 +42,7 @@ This is because the frontend is trying to connect to an old/incorrect backend UR
 
    **Variable Name:** `FRONTEND_URL`
 
-   **Value:** `https://no-limits-jade.vercel.app`
+   **Value:** `https://no-limits-seven.vercel.app`
 
    **Environments:** Select all (Production, Preview, Development)
 
@@ -61,7 +61,7 @@ This is because the frontend is trying to connect to an old/incorrect backend UR
 
 ## Current Production URLs
 
-- **Frontend:** https://no-limits-jade.vercel.app/
+- **Frontend:** https://no-limits-seven.vercel.app/
 - **Backend:** https://no-limits-backend.vercel.app/
 
 ## How It Works
@@ -88,7 +88,7 @@ const allowedOrigins = env.frontendUrl.split(',').map(url => url.trim());
 
 You can specify multiple origins separated by commas:
 ```
-FRONTEND_URL="http://localhost:3000,https://no-limits-jade.vercel.app"
+FRONTEND_URL="http://localhost:3000,https://no-limits-seven.vercel.app"
 ```
 
 ## Local Development
@@ -104,7 +104,7 @@ And ensure your backend `.env` includes:
 
 ```bash
 # backend/.env
-FRONTEND_URL="http://localhost:3000,https://no-limits-jade.vercel.app"
+FRONTEND_URL="http://localhost:3000,https://no-limits-seven.vercel.app"
 ```
 
 ## Troubleshooting

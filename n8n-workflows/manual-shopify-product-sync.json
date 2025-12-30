@@ -1,0 +1,124 @@
+{
+  "name": "Manual Shopify Product Sync - By SKU",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "When clicking 'Test workflow'",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "resource": "product",
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 10,
+        "options": {
+          "fields": "id,title,body_html,vendor,product_type,created_at,updated_at,published_at,tags,status,variants,images,options"
+        }
+      },
+      "id": "get-product",
+      "name": "Get Shopify Products",
+      "type": "n8n-nodes-base.shopify",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "credentials": {
+        "shopifyApi": {
+          "id": "SHOPIFY_CREDENTIAL_ID",
+          "name": "Shopify Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter to only the product with the SKU we want\nconst allItems = $input.all();\nconst targetSku = 'Testing-121212'; // Change this to the SKU you want to sync\n\nfor (const item of allItems) {\n  const product = item.json;\n  const variants = product.variants || [];\n  \n  // Check if any variant has the target SKU\n  for (const variant of variants) {\n    if (variant.sku === targetSku) {\n      return [item]; // Return this product\n    }\n  }\n}\n\n// If no match found, return error\nthrow new Error(`Product with SKU '${targetSku}' not found in Shopify`);"
+      },
+      "id": "filter-by-sku",
+      "name": "Filter by SKU",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Transform Shopify product to JTL FFN CreateProductRequest format\nconst product = $input.first().json;\n\n// Get the first variant for main product data\nconst firstVariant = product.variants && product.variants[0] ? product.variants[0] : {};\n\n// Build identifier object (at least one identifier required)\nconst identifier = {\n  ean: firstVariant.barcode || firstVariant.sku || null\n};\n\n// Build attributes array\nconst attributes = [];\n\nattributes.push({\n  key: 'platform',\n  value: 'shopify'\n});\n\nattributes.push({\n  key: 'externalProductId',\n  value: product.id ? product.id.toString() : ''\n});\n\nif (product.product_type) {\n  attributes.push({\n    key: 'productType',\n    value: product.product_type\n  });\n}\n\nif (product.vendor) {\n  attributes.push({\n    key: 'vendor',\n    value: product.vendor\n  });\n}\n\nif (product.tags) {\n  attributes.push({\n    key: 'tags',\n    value: product.tags\n  });\n}\n\n// Get weight (convert from grams to kg if needed)\nlet weight = firstVariant.weight || 0;\nif (firstVariant.weight_unit === 'g' || firstVariant.weight_unit === 'grams') {\n  weight = weight / 1000;\n} else if (!weight || weight === 0) {\n  weight = 0.1; // Default weight\n}\n\n// Build the JTL FFN product request\nconst jtlProduct = {\n  name: product.title || 'Unnamed Product',\n  merchantSku: firstVariant.sku || product.id.toString(),\n  identifier: identifier,\n  description: product.body_html || null,\n  attributes: attributes,\n  weight: weight,\n  length: 0.01,\n  width: 0.01,\n  height: 0.01\n};\n\nreturn [{ json: jtlProduct }];"
+      },
+      "id": "transform-product",
+      "name": "Transform Product Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://ffn.api.jtl-software.com/api/v1/merchant/products",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{$json}}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "send-to-api",
+      "name": "Send Product to JTL FFN API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 300],
+      "credentials": {
+        "oAuth2Api": {
+          "id": "sXkCnnZQmB7fvPro",
+          "name": "JTL oauth Lukas Ehmer"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "content": "## Manual Shopify Product Sync\n\n**How to use:**\n1. Edit the 'Filter by SKU' node\n2. Change 'Testing-121212' to your desired SKU\n3. Click 'Execute workflow'\n\n**To sync both order products:**\n- Run with SKU: Testing-121212\n- Change and run with: Testing-13123\n\n**This will create the products in JTL FFN**",
+        "height": 300,
+        "width": 350
+      },
+      "id": "sticky-note",
+      "name": "Instructions",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [200, 100]
+    }
+  ],
+  "connections": {
+    "When clicking 'Test workflow'": {
+      "main": [[{
+        "node": "Get Shopify Products",
+        "type": "main",
+        "index": 0
+      }]]
+    },
+    "Get Shopify Products": {
+      "main": [[{
+        "node": "Filter by SKU",
+        "type": "main",
+        "index": 0
+      }]]
+    },
+    "Filter by SKU": {
+      "main": [[{
+        "node": "Transform Product Data",
+        "type": "main",
+        "index": 0
+      }]]
+    },
+    "Transform Product Data": {
+      "main": [[{
+        "node": "Send Product to JTL FFN API",
+        "type": "main",
+        "index": 0
+      }]]
+    }
+  }
+}
+

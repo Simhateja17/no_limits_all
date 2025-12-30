@@ -1,0 +1,518 @@
+{
+  "name": "JTL FFN API → WooCommerce Order Updates",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 10
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://ffn.api.jtl-software.com/api/v1/merchant/outbounds",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "status",
+              "value": "Shipped,Completed"
+            },
+            {
+              "name": "limit",
+              "value": "100"
+            },
+            {
+              "name": "createdFrom",
+              "value": "={{ $now.minus({ days: 7 }).toISO() }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "get-api-orders",
+      "name": "Get Orders from JTL FFN API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 300],
+      "credentials": {
+        "oAuth2Api": {
+          "id": "JTL_FFN_OAUTH2_CREDENTIAL_ID",
+          "name": "JTL FFN OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://ffn.api.jtl-software.com/api/v1/merchant/outbounds/shipping-notifications/updates",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "get-shipping-notifications",
+      "name": "Get Shipping Notifications",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 450],
+      "credentials": {
+        "oAuth2Api": {
+          "id": "JTL_FFN_OAUTH2_CREDENTIAL_ID",
+          "name": "JTL FFN OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract orders from API response\nconst response = $input.first().json;\n\n// JTL FFN API returns paginated results with 'items' array\nlet orders = [];\n\nif (response.items && Array.isArray(response.items)) {\n  orders = response.items;\n} else if (response.data && Array.isArray(response.data)) {\n  orders = response.data;\n} else if (Array.isArray(response)) {\n  orders = response;\n}\n\n// Return items in n8n format\nif (orders.length > 0) {\n  return orders.map(order => ({ json: order }));\n} else {\n  console.log('No orders found in response');\n  return [];\n}"
+      },
+      "id": "split-orders",
+      "name": "Split Orders",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 250]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract shipping notifications from API response\nconst response = $input.first().json;\n\nlet notifications = [];\n\nif (response.items && Array.isArray(response.items)) {\n  notifications = response.items;\n} else if (response.data && Array.isArray(response.data)) {\n  notifications = response.data;\n} else if (Array.isArray(response)) {\n  notifications = response;\n}\n\n// Return items in n8n format\nif (notifications.length > 0) {\n  return notifications.map(notif => ({ json: notif }));\n} else {\n  console.log('No shipping notifications found');\n  return [];\n}"
+      },
+      "id": "split-shipping-notifications",
+      "name": "Split Shipping Notifications",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 450]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "mergeByFields": {
+          "values": [
+            {
+              "field1": "outboundId",
+              "field2": "outboundId"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "merge-orders-tracking",
+      "name": "Merge Orders with Tracking",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [850, 350]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter orders by salesChannel - only WooCommerce orders with tracking\nconst allOrders = $input.all();\nconst filteredOrders = [];\n\nfor (const item of allOrders) {\n  const order = item.json;\n  \n  // Check if order has salesChannel field\n  let isWooCommerce = false;\n  \n  // Check salesChannel field (orders use salesChannel, not platform)\n  if (order.salesChannel === 'WooCommerce') {\n    isWooCommerce = true;\n  } else if (order.platform === 'woocommerce') {\n    // Fallback: check platform field if salesChannel not available\n    isWooCommerce = true;\n  }\n  \n  // Check if order is shipped\n  const isShipped = order.status === 'Shipped' || order.status === 'Completed';\n  \n  // Extract tracking from packages array (from merged shipping notification)\n  let trackingNumber = null;\n  if (order.packages && Array.isArray(order.packages) && order.packages.length > 0) {\n    const pkg = order.packages[0];\n    if (pkg.identifier && Array.isArray(pkg.identifier) && pkg.identifier.length > 0) {\n      const trackingId = pkg.identifier.find(id => id.identifierType === 'TrackingId');\n      if (trackingId && trackingId.value) {\n        trackingNumber = trackingId.value;\n      }\n    }\n  }\n  \n  // Add trackingNumber to order object for downstream nodes\n  if (trackingNumber) {\n    order.trackingNumber = trackingNumber;\n  }\n  \n  const hasTracking = !!trackingNumber;\n  const hasOrderId = order.merchantOutboundNumber && order.merchantOutboundNumber.trim() !== '';\n  \n  if (isWooCommerce && isShipped && hasTracking && hasOrderId) {\n    console.log(`Order ${order.merchantOutboundNumber} is a WooCommerce order with tracking ${trackingNumber} - processing`);\n    filteredOrders.push({ json: order });\n  } else {\n    if (!isWooCommerce) {\n      console.log(`Order ${order.merchantOutboundNumber} is NOT a WooCommerce order (salesChannel: ${order.salesChannel}) - skipping`);\n    } else if (!isShipped) {\n      console.log(`Order ${order.merchantOutboundNumber} is WooCommerce but status is ${order.status} (not Shipped/Completed) - skipping`);\n    } else if (!hasTracking) {\n      console.log(`Order ${order.merchantOutboundNumber} is WooCommerce and shipped but has no tracking info in packages array - skipping`);\n    }\n  }\n}\n\nreturn filteredOrders;"
+      },
+      "id": "filter-woo-orders",
+      "name": "Filter WooCommerce Orders with Tracking",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 350]
+    },
+    {
+      "parameters": {
+        "resource": "order",
+        "operation": "get",
+        "orderId": "={{$json[\"merchantOutboundNumber\"]}}"
+      },
+      "id": "get-woo-order",
+      "name": "Get WooCommerce Order",
+      "type": "n8n-nodes-base.wooCommerce",
+      "typeVersion": 1,
+      "position": [1250, 250],
+      "credentials": {
+        "wooCommerceApi": {
+          "id": "WOOCOMMERCE_CREDENTIAL_ID",
+          "name": "WooCommerce Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineByPosition",
+        "options": {}
+      },
+      "id": "preserve-tracking-data",
+      "name": "Preserve Tracking Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [1350, 200]
+    },
+    {
+      "parameters": {
+        "resource": "order",
+        "operation": "update",
+        "orderId": "={{$json[\"id\"]}}",
+        "updateFields": {
+          "status": "completed",
+          "meta_data": [
+            {
+              "key": "tracking_number",
+              "value": "={{$json[\"trackingNumber\"]}}"
+            },
+            {
+              "key": "tracking_carrier",
+              "value": "={{$json[\"carrier\"] || 'DHL'}}"
+            },
+            {
+              "key": "tracking_url",
+              "value": "={{$json[\"trackingUrl\"] || ''}}"
+            }
+          ]
+        }
+      },
+      "id": "add-tracking-meta",
+      "name": "Add Tracking Metadata",
+      "type": "n8n-nodes-base.wooCommerce",
+      "typeVersion": 1,
+      "position": [1550, 200],
+      "credentials": {
+        "wooCommerceApi": {
+          "id": "WOOCOMMERCE_CREDENTIAL_ID",
+          "name": "WooCommerce Account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://lukas-ehmer-dff5bubpbpfacuc2.southindia-01.azurewebsites.net/wp-json/wc/v3/orders/{{$json[\"id\"]}}/notes",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "wooCommerceApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ note: 'Shipment tracking information:\\nTracking Number: ' + ($json.trackingNumber || 'N/A') + '\\nCarrier: ' + ($json.carrier || 'DHL') + '\\nShipped on: ' + ($json.shippedDate || 'N/A'), customer_note: true }) }}",
+        "options": {}
+      },
+      "id": "add-tracking-note",
+      "name": "Add Customer Tracking Note",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1750, 200],
+      "credentials": {
+        "wooCommerceApi": {
+          "id": "WOOCOMMERCE_CREDENTIAL_ID",
+          "name": "WooCommerce Account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json[\"status\"]}}",
+              "value2": "completed"
+            }
+          ]
+        }
+      },
+      "id": "check-if-completed",
+      "name": "Check if Order Completed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1250, 450]
+    },
+    {
+      "parameters": {
+        "resource": "order",
+        "operation": "update",
+        "orderId": "={{$json[\"merchantOutboundNumber\"]}}",
+        "updateFields": {
+          "status": "completed",
+          "customer_note": "Your order has been completed and shipped. Thank you for your purchase!"
+        }
+      },
+      "id": "complete-woo-order",
+      "name": "Complete WooCommerce Order",
+      "type": "n8n-nodes-base.wooCommerce",
+      "typeVersion": 1,
+      "position": [1450, 450],
+      "credentials": {
+        "wooCommerceApi": {
+          "id": "WOOCOMMERCE_CREDENTIAL_ID",
+          "name": "WooCommerce Account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$json[\"woocommerceUrl\"]}}/wp-json/wc/v3/orders/{{$json[\"merchantOutboundNumber\"]}}/notes",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "wooCommerceApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"note\": \"Order completed via JTL FFN API integration at {{new Date().toISOString()}}\",\n  \"customer_note\": false\n}",
+        "options": {}
+      },
+      "id": "add-completion-note",
+      "name": "Add Completion Note",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1650, 450],
+      "credentials": {
+        "wooCommerceApi": {
+          "id": "WOOCOMMERCE_CREDENTIAL_ID",
+          "name": "WooCommerce Account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const orderId = $input.first().json.merchantOutboundNumber || 'unknown';\nconst trackingNumber = $input.first().json.trackingNumber || 'N/A';\nconst status = $input.first().json.status || 'unknown';\n\nconst successLog = {\n  \"timestamp\": new Date().toISOString(),\n  \"orderId\": orderId,\n  \"trackingNumber\": trackingNumber,\n  \"status\": status,\n  \"action\": \"updated\",\n  \"platform\": \"woocommerce\"\n};\n\nconsole.log('Order updated successfully:', successLog);\n\nreturn { json: successLog };"
+      },
+      "id": "log-success",
+      "name": "Log Success",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1850, 350]
+    },
+    {
+      "parameters": {
+        "jsCode": "const orderId = $input.first().json.merchantOutboundNumber || 'unknown';\nconst error = $input.first().json.error || JSON.stringify($input.first().json);\n\nconst errorLog = {\n  \"timestamp\": new Date().toISOString(),\n  \"orderId\": orderId,\n  \"platform\": \"woocommerce\",\n  \"action\": \"update_failed\",\n  \"error\": error\n};\n\nconsole.error('Order update failed:', errorLog);\n\n// Optional: Send alert via webhook or email\nreturn { json: errorLog };"
+      },
+      "id": "error-handler",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1850, 450]
+    },
+    {
+      "parameters": {
+        "content": "## JTL FFN API → WooCommerce Order Updates\n\n**Purpose**: Fetch order updates (tracking, status) from JTL FFN API and update WooCommerce orders\n\n**Frequency**: Runs every 10 minutes\n\n**Flow**:\n1. Fetch shipped/completed orders from API\n2. Filter WooCommerce orders with tracking\n3. Add tracking metadata to order\n4. Add customer tracking note\n5. Complete orders when applicable\n6. Log results\n\n**Features**:\n- Automatic tracking sync\n- Customer notifications\n- Order completion\n- Comprehensive logging\n\n**Credentials Needed**:\n- WooCommerce API credentials\n- JTL FFN API authentication",
+        "height": 450,
+        "width": 350
+      },
+      "id": "sticky-note",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [200, 100]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Orders from JTL FFN API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Orders from JTL FFN API": {
+      "main": [
+        [
+          {
+            "node": "Split Orders",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Shipping Notifications",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Shipping Notifications": {
+      "main": [
+        [
+          {
+            "node": "Split Shipping Notifications",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Orders": {
+      "main": [
+        [
+          {
+            "node": "Merge Orders with Tracking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Shipping Notifications": {
+      "main": [
+        [
+          {
+            "node": "Merge Orders with Tracking",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Orders with Tracking": {
+      "main": [
+        [
+          {
+            "node": "Filter WooCommerce Orders with Tracking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter WooCommerce Orders with Tracking": {
+      "main": [
+        [
+          {
+            "node": "Get WooCommerce Order",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Preserve Tracking Data",
+            "type": "main",
+            "index": 1
+          },
+          {
+            "node": "Check if Order Completed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get WooCommerce Order": {
+      "main": [
+        [
+          {
+            "node": "Preserve Tracking Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preserve Tracking Data": {
+      "main": [
+        [
+          {
+            "node": "Add Tracking Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add Tracking Metadata": {
+      "main": [
+        [
+          {
+            "node": "Add Customer Tracking Note",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add Customer Tracking Note": {
+      "main": [
+        [
+          {
+            "node": "Log Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check if Order Completed": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Complete WooCommerce Order",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Complete WooCommerce Order": {
+      "main": [
+        [
+          {
+            "node": "Add Completion Note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add Completion Note": {
+      "main": [
+        [
+          {
+            "node": "Log Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "woocommerce",
+      "id": "woocommerce-tag"
+    },
+    {
+      "name": "orders",
+      "id": "orders-tag"
+    },
+    {
+      "name": "tracking",
+      "id": "tracking-tag"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2025-11-18T00:00:00.000Z",
+  "versionId": "1"
+}
+

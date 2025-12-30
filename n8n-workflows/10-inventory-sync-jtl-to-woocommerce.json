@@ -1,0 +1,452 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "4a892815-dc45-4587-944b-a3792fc6a6ae",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -1280,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://ffn.api.jtl-software.com/api/v1/merchant/stocks",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "$top",
+              "value": "500"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "get-stock-jtl-woo",
+      "name": "Get Stock from JTL FFN",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -1056,
+        448
+      ],
+      "credentials": {
+        "oAuth2Api": {
+          "id": "sXkCnnZQmB7fvPro",
+          "name": "JTL oauth Lukas Ehmer"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://ffn.api.jtl-software.com/api/v1/merchant/products",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "$select",
+              "value": "jfsku,merchantSku,attributes"
+            },
+            {
+              "name": "$top",
+              "value": "500"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "get-products-jtl-woo",
+      "name": "Get Products from JTL FFN",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -1056,
+        640
+      ],
+      "credentials": {
+        "oAuth2Api": {
+          "id": "sXkCnnZQmB7fvPro",
+          "name": "JTL oauth Lukas Ehmer"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract stock data from JTL FFN API response\nconst response = $input.first().json;\n\nconsole.log('Stock response structure:', JSON.stringify(response, null, 2));\n\nlet stocks = [];\n\nif (response.items && Array.isArray(response.items)) {\n  stocks = response.items;\n  console.log(`Found ${stocks.length} stock items in response.items`);\n} else if (response.data && Array.isArray(response.data)) {\n  stocks = response.data;\n  console.log(`Found ${stocks.length} stock items in response.data`);\n} else if (Array.isArray(response)) {\n  stocks = response;\n  console.log(`Response itself is array with ${stocks.length} stock items`);\n}\n\n// Return ALL stock items\nif (stocks.length > 0) {\n  console.log('Returning', stocks.length, 'stock items');\n  return stocks.map(stock => ({ json: stock }));\n} else {\n  console.log('No stock items found in response');\n  return [];\n}"
+      },
+      "id": "split-stock-woo",
+      "name": "Split Stock Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -832,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract products from JTL FFN API response\nconst response = $input.first().json;\n\nconsole.log('Products response structure:', JSON.stringify(response, null, 2));\n\nlet products = [];\n\nif (response.items && Array.isArray(response.items)) {\n  products = response.items;\n  console.log(`Found ${products.length} products in response.items`);\n} else if (response.data && Array.isArray(response.data)) {\n  products = response.data;\n  console.log(`Found ${products.length} products in response.data`);\n} else if (Array.isArray(response)) {\n  products = response;\n  console.log(`Response itself is array with ${products.length} products`);\n}\n\n// Return ALL products\nif (products.length > 0) {\n  console.log('Returning', products.length, 'products');\n  return products.map(product => ({ json: product }));\n} else {\n  console.log('No products found in response');\n  return [];\n}"
+      },
+      "id": "split-products-woo",
+      "name": "Split Products",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -832,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "advanced": true,
+        "mergeByFields": {
+          "values": [
+            {
+              "field1": "merchantSku",
+              "field2": "merchantSku"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "merge-stock-products-woo",
+      "name": "Merge Stock with Products",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        -608,
+        544
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter products by platform - only WooCommerce products\nconst allItems = $input.all();\nconst woocommerceProducts = [];\n\nfor (const item of allItems) {\n  const product = item.json;\n  \n  // Check if product has platform attribute\n  let isWooCommerce = false;\n  \n  if (product.attributes && Array.isArray(product.attributes)) {\n    const platformAttr = product.attributes.find(attr => attr.key === 'platform');\n    if (platformAttr && platformAttr.value === 'woocommerce') {\n      isWooCommerce = true;\n    }\n  }\n  \n  if (!isWooCommerce && product.platform === 'woocommerce') {\n    isWooCommerce = true;\n  }\n  \n  if (isWooCommerce) {\n    console.log(`Product ${product.merchantSku} is a WooCommerce product - processing`);\n    woocommerceProducts.push({ json: product });\n  } else {\n    console.log(`Product ${product.merchantSku} is NOT a WooCommerce product (platform: ${product.attributes?.find(attr => attr.key === 'platform')?.value || 'none'}) - skipping`);\n  }\n}\n\nconsole.log(`Filtered ${woocommerceProducts.length} WooCommerce products from ${allItems.length} total products`);\nreturn woocommerceProducts;"
+      },
+      "id": "filter-woocommerce-products",
+      "name": "Filter WooCommerce Products Only",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -384,
+        544
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "limit": 100,
+        "options": {}
+      },
+      "id": "get-all-woo-products",
+      "name": "Get All WooCommerce Products",
+      "type": "n8n-nodes-base.wooCommerce",
+      "typeVersion": 1,
+      "position": [
+        -1056,
+        256
+      ],
+      "credentials": {
+        "wooCommerceApi": {
+          "id": "woocommerce-cred-id",
+          "name": "WooCommerce account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract products with SKUs from WooCommerce\nconst response = $input.all();\nconst productsWithSku = [];\n\nfor (const item of response) {\n  const product = item.json;\n  \n  // Only include products that have a SKU\n  if (product.sku) {\n    productsWithSku.push({\n      json: {\n        id: product.id,\n        sku: product.sku,\n        name: product.name,\n        stock_quantity: product.stock_quantity || 0,\n        manage_stock: product.manage_stock || false\n      }\n    });\n  }\n}\n\nconsole.log(`Extracted ${productsWithSku.length} WooCommerce products with SKUs`);\nreturn productsWithSku;"
+      },
+      "id": "extract-woo-products",
+      "name": "Extract WooCommerce Products",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -832,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "advanced": true,
+        "mergeByFields": {
+          "values": [
+            {
+              "field1": "merchantSku",
+              "field2": "sku"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "merge-woo-data",
+      "name": "Merge Stock Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        -160,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare data for WooCommerce update - Process ALL items\nconst allItems = $input.all();\nconst updates = [];\n\nfor (const item of allItems) {\n  const mergedData = item.json;\n  \n  // Get stock level from JTL FFN\n  const stockLevel = mergedData.stockLevel || mergedData.available || 0;\n  \n  // WooCommerce product details\n  const productId = mergedData.id;\n  const merchantSku = mergedData.merchantSku || mergedData.sku;\n  const productName = mergedData.name;\n  const currentQuantity = mergedData.stock_quantity || 0;\n  \n  // Only update if quantity changed\n  if (stockLevel === currentQuantity) {\n    console.log(`SKU ${merchantSku} - No change needed (${stockLevel})`);\n    continue;\n  }\n  \n  console.log(`Preparing update for ${productName} (${merchantSku}): ${currentQuantity} → ${stockLevel}`);\n  \n  updates.push({\n    json: {\n      id: productId,\n      merchantSku: merchantSku,\n      productName: productName,\n      newQuantity: stockLevel,\n      oldQuantity: currentQuantity,\n      stockStatus: stockLevel > 0 ? 'instock' : 'outofstock'\n    }\n  });\n}\n\nconsole.log(`Prepared ${updates.length} products for update out of ${allItems.length} total`);\nreturn updates;"
+      },
+      "id": "prepare-woo-update",
+      "name": "Prepare Update Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        64,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://lukas-ehmer-dff5bubpbpfacuc2.southindia-01.azurewebsites.net/wp-json/wc/v3/products/{{$json.id}}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "wooCommerceApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"manage_stock\": true,\n  \"stock_quantity\": {{$json.newQuantity}},\n  \"stock_status\": \"{{$json.stockStatus}}\"\n}",
+        "options": {}
+      },
+      "id": "update-woo-stock",
+      "name": "Update WooCommerce Stock",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        288,
+        448
+      ],
+      "credentials": {
+        "wooCommerceApi": {
+          "id": "woocommerce-cred-id",
+          "name": "WooCommerce account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log successful stock updates to WooCommerce - Process ALL items\nconst allItems = $input.all();\nconst successLogs = [];\n\nfor (const item of allItems) {\n  const product = item.json;\n  \n  console.log(`✅ Successfully updated WooCommerce product: ${product.name} (ID: ${product.id})`);\n  console.log(`   SKU: ${product.sku}, Stock: ${product.stock_quantity}`);\n  \n  successLogs.push({\n    json: {\n      status: 'success',\n      productId: product.id,\n      sku: product.sku,\n      name: product.name,\n      stock_quantity: product.stock_quantity,\n      message: `Successfully synced stock for ${product.sku}`\n    }\n  });\n}\n\nconsole.log(`✅ Total successful updates: ${successLogs.length}`);\nreturn successLogs;"
+      },
+      "id": "log-success",
+      "name": "Log Success",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        512,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log errors when WooCommerce updates fail - Process ALL items\nconst allItems = $input.all();\nconst errorLogs = [];\n\nfor (const item of allItems) {\n  const error = item.json;\n  \n  console.error('❌ Failed to update WooCommerce product');\n  console.error('Error:', JSON.stringify(error, null, 2));\n  \n  errorLogs.push({\n    json: {\n      status: 'error',\n      error: error.message || 'Unknown error',\n      details: error\n    }\n  });\n}\n\nconsole.error(`❌ Total failed updates: ${errorLogs.length}`);\nreturn errorLogs;"
+      },
+      "id": "log-error",
+      "name": "Log Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        512,
+        528
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## WooCommerce Inventory Sync Workflow (JTL FFN → WooCommerce)\n\n**Purpose**: Sync inventory levels from JTL FFN warehouse to WooCommerce stores.\n\n**Architecture**: Dual-endpoint merge pattern\n\n**Flow**:\n1. **Parallel Data Fetching**:\n   - Get Stock from JTL FFN (/merchant/stocks)\n   - Get Products from JTL FFN (/merchant/products)\n   - Get All WooCommerce Products (native node)\n\n2. **First Merge (JTL Data)**:\n   - Merge stock + product data by merchantSku\n   - Combines stock levels with product attributes\n\n3. **Platform Filtering**:\n   - Filter for products with platform='woocommerce'\n   - Only process WooCommerce-tagged products\n\n4. **Second Merge (JTL + WooCommerce)**:\n   - Match JTL merchantSku with WooCommerce SKU\n   - Combine stock levels with WooCommerce product IDs\n\n5. **Update & Logging**:\n   - Prepare update data (skip unchanged quantities)\n   - Update WooCommerce stock via native node\n   - Log success/error results\n\n**Key Differences from Shopify**:\n- Uses WooCommerce native n8n node (not HTTP/GraphQL)\n- Simpler update API (stock_quantity field)\n- No location ID required\n- Stock status auto-calculated (instock/outofstock)\n\n**Setup Requirements**:\n- JTL FFN OAuth2 credentials\n- WooCommerce API credentials (Consumer Key/Secret)\n- Products must have platform='woocommerce' attribute in JTL\n- SKUs must match between JTL and WooCommerce",
+        "height": 585.5590062111801,
+        "width": 407.2267206477733,
+        "color": 4
+      },
+      "id": "doc-sticky-note",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1280,
+        -160
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Stock from JTL FFN",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Products from JTL FFN",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get All WooCommerce Products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Stock from JTL FFN": {
+      "main": [
+        [
+          {
+            "node": "Split Stock Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Products from JTL FFN": {
+      "main": [
+        [
+          {
+            "node": "Split Products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Stock Data": {
+      "main": [
+        [
+          {
+            "node": "Merge Stock with Products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Products": {
+      "main": [
+        [
+          {
+            "node": "Merge Stock with Products",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Stock with Products": {
+      "main": [
+        [
+          {
+            "node": "Filter WooCommerce Products Only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter WooCommerce Products Only": {
+      "main": [
+        [
+          {
+            "node": "Merge Stock Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All WooCommerce Products": {
+      "main": [
+        [
+          {
+            "node": "Extract WooCommerce Products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract WooCommerce Products": {
+      "main": [
+        [
+          {
+            "node": "Merge Stock Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Stock Data": {
+      "main": [
+        [
+          {
+            "node": "Prepare Update Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Update Data": {
+      "main": [
+        [
+          {
+            "node": "Update WooCommerce Stock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update WooCommerce Stock": {
+      "main": [
+        [
+          {
+            "node": "Log Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ],
+      "error": [
+        [
+          {
+            "node": "Log Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "923562b6e5c9b7345019a0c847b18dcbbb522ef8ae30ba6cde59400a4e3f061c"
+  }
+}

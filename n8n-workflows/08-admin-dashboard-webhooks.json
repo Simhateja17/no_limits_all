@@ -1,0 +1,327 @@
+{
+  "name": "Admin Dashboard Webhooks",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "safety-stock",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-safety-stock",
+      "name": "Webhook - Safety Stock",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "safety-stock"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process safety stock update\nconst data = $input.first().json.body || $input.first().json;\n\nconst { store, sku, safetyStock } = data;\n\n// Store in N8N static data or database\n// For now, we'll log it and return success\n\nconst safetyStockConfig = {\n  store,\n  sku,\n  safetyStock: parseInt(safetyStock),\n  updatedAt: new Date().toISOString()\n};\n\n// In production, save to database or N8N static data\nconsole.log('Safety stock updated:', safetyStockConfig);\n\nreturn { json: { success: true, data: safetyStockConfig } };"
+      },
+      "id": "process-safety-stock",
+      "name": "Process Safety Stock",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, message: 'Safety stock updated successfully' }) }}",
+        "options": {}
+      },
+      "id": "respond-safety-stock",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "global-safety-stock",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-global-safety",
+      "name": "Webhook - Global Safety Stock",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 500],
+      "webhookId": "global-safety-stock"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process global safety stock update\nconst data = $input.first().json.body || $input.first().json;\n\nconst { safetyStock } = data;\n\nconst globalConfig = {\n  globalSafetyStock: parseInt(safetyStock),\n  updatedAt: new Date().toISOString()\n};\n\n// Store in N8N static data\n// In production, save to database\nconsole.log('Global safety stock updated:', globalConfig);\n\nreturn { json: { success: true, data: globalConfig } };"
+      },
+      "id": "process-global-safety",
+      "name": "Process Global Safety Stock",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 500]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, message: 'Global safety stock updated' }) }}",
+        "options": {}
+      },
+      "id": "respond-global-safety",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [650, 500]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "add-store",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-add-store",
+      "name": "Webhook - Add Store",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 700],
+      "webhookId": "add-store"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process new store addition\nconst data = $input.first().json.body || $input.first().json;\n\nconst { name, type, url, apiKey, apiSecret } = data;\n\nconst storeConfig = {\n  id: `store-${Date.now()}`,\n  name,\n  type,\n  url,\n  apiKey,\n  apiSecret,\n  status: 'active',\n  createdAt: new Date().toISOString()\n};\n\n// In production:\n// 1. Create new N8N credential\n// 2. Duplicate workflows for new store\n// 3. Update workflow credentials\n// 4. Store configuration in database\n\nconsole.log('New store added:', storeConfig);\n\nreturn { json: { success: true, data: storeConfig } };"
+      },
+      "id": "process-add-store",
+      "name": "Process Add Store",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 700]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, message: 'Store added successfully' }) }}",
+        "options": {}
+      },
+      "id": "respond-add-store",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [650, 700]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "store-status",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-store-status",
+      "name": "Webhook - Store Status",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 900],
+      "webhookId": "store-status"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process store status update\nconst data = $input.first().json.body || $input.first().json;\n\nconst { storeId, status } = data;\n\n// In production:\n// 1. Update store status in database\n// 2. Enable/disable workflows for this store\n\nconsole.log(`Store ${storeId} status updated to: ${status}`);\n\nreturn { json: { success: true, storeId, status } };"
+      },
+      "id": "process-store-status",
+      "name": "Process Store Status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 900]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, message: 'Store status updated' }) }}",
+        "options": {}
+      },
+      "id": "respond-store-status",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [650, 900]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "shipping-mapping",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-shipping-mapping",
+      "name": "Webhook - Shipping Mapping",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 1100],
+      "webhookId": "shipping-mapping"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process shipping method mapping\nconst data = $input.first().json.body || $input.first().json;\n\nconst { store, storeMethod, ffnMethod } = data;\n\nconst mapping = {\n  store,\n  storeMethod,\n  ffnMethod,\n  updatedAt: new Date().toISOString()\n};\n\n// Store in N8N static data or database\n// This will be used in order transformation workflows\nconsole.log('Shipping mapping updated:', mapping);\n\nreturn { json: { success: true, data: mapping } };"
+      },
+      "id": "process-shipping-mapping",
+      "name": "Process Shipping Mapping",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 1100]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, message: 'Shipping mapping updated' }) }}",
+        "options": {}
+      },
+      "id": "respond-shipping-mapping",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [650, 1100]
+    },
+    {
+      "parameters": {
+        "content": "## Admin Dashboard Webhooks\n\n**Purpose**: Receive configuration updates from Next.js admin dashboard\n\n**Endpoints**:\n- `/safety-stock` - Update safety stock levels\n- `/global-safety-stock` - Update global safety stock\n- `/add-store` - Add new store\n- `/store-status` - Update store status\n- `/shipping-mapping` - Update shipping method mapping\n\n**Note**: In production, these should save to a database or N8N static data for persistence.",
+        "height": 400,
+        "width": 350
+      },
+      "id": "sticky-note",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [200, 100]
+    }
+  ],
+  "connections": {
+    "Webhook - Safety Stock": {
+      "main": [
+        [
+          {
+            "node": "Process Safety Stock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Safety Stock": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Global Safety Stock": {
+      "main": [
+        [
+          {
+            "node": "Process Global Safety Stock",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Global Safety Stock": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Add Store": {
+      "main": [
+        [
+          {
+            "node": "Process Add Store",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Add Store": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Store Status": {
+      "main": [
+        [
+          {
+            "node": "Process Store Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Store Status": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook - Shipping Mapping": {
+      "main": [
+        [
+          {
+            "node": "Process Shipping Mapping",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Shipping Mapping": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "admin",
+      "id": "admin-tag"
+    },
+    {
+      "name": "webhook",
+      "id": "webhook-tag"
+    }
+  ],
+  "triggerCount": 5,
+  "updatedAt": "2025-11-19T00:00:00.000Z",
+  "versionId": "1"
+}
+

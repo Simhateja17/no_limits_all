@@ -3,7 +3,7 @@
 ## 🎯 Your Setup
 
 **Frontend (Already Deployed):**
-- Vercel: https://no-limits-jade.vercel.app/
+- Vercel: https://no-limits-seven.vercel.app/
 - Status: ✅ Live
 
 **Backend (To Deploy):**
@@ -64,7 +64,7 @@ SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlkemlreGZ0b2djZ2d5a2tvZXR1Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2NjAyOTEyNywiZXhwIjoyMDgxNjA1MTI3fQ.y6pbt-v9o8LjkIrsJmPVy-WFl2JlQ4bGy32zDhxR82Q
 
 # CORS - Your Vercel Frontend
-FRONTEND_URL=https://no-limits-jade.vercel.app
+FRONTEND_URL=https://no-limits-seven.vercel.app
 
 # JWT Secrets (GENERATED - USE THESE):
 JWT_SECRET=e06f98e764e3b8c9ee9afb2140be0a0fc15e58e75a90487231f03f7d1f1ef1b96bd74138f943b548ad16cbb5536f80cf79ed13aa749fc1120b2d6737f55045d9
@@ -85,7 +85,7 @@ JWT_REFRESH_EXPIRES_IN=30d
 ### Update Vercel Environment Variable
 
 1. Go to: https://vercel.com/dashboard
-2. Select project: **no-limits-jade**
+2. Select project: **no-limits-seven**
 3. Go to: **Settings** → **Environment Variables**
 4. Add new variable:
    - **Name**: `NEXT_PUBLIC_API_URL`
@@ -107,7 +107,7 @@ Should see:
 ```
 
 ### 2. Test Frontend
-1. Visit: https://no-limits-jade.vercel.app/
+1. Visit: https://no-limits-seven.vercel.app/
 2. Login with:
    - Email: `superadmin@nolimits.com`
    - Password: `password123`
@@ -171,7 +171,7 @@ OR
 
 ## 📊 Expected Behavior
 
-✅ **Frontend**: https://no-limits-jade.vercel.app/
+✅ **Frontend**: https://no-limits-seven.vercel.app/
 ✅ **Backend**: https://your-backend-url.onrender.com/
 ✅ **Database**: Supabase (already connected)
 ✅ **CORS**: Configured

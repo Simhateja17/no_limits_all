@@ -1,0 +1,554 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      },
+      "id": "ef2ff71e-921b-409d-a32f-1f93b0ce827c",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -1280,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://ffn.api.jtl-software.com/api/v1/merchant/stocks",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "$top",
+              "value": "500"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "3b4353dd-6c27-43e1-b166-0deac80b7a12",
+      "name": "Get Stock from JTL FFN",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -1056,
+        448
+      ],
+      "credentials": {
+        "oAuth2Api": {
+          "id": "sXkCnnZQmB7fvPro",
+          "name": "JTL oauth Lukas Ehmer"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://ffn.api.jtl-software.com/api/v1/merchant/products",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "$select",
+              "value": "jfsku,merchantSku,attributes"
+            },
+            {
+              "name": "$top",
+              "value": "500"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "bafbb578-1e7a-47eb-88bc-04630977f0b1",
+      "name": "Get Products from JTL FFN",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -1056,
+        640
+      ],
+      "credentials": {
+        "oAuth2Api": {
+          "id": "sXkCnnZQmB7fvPro",
+          "name": "JTL oauth Lukas Ehmer"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract products from JTL FFN API response\nconst response = $input.first().json;\n\n// Log the structure for debugging\nconsole.log('Response structure:', JSON.stringify(response, null, 2));\n\nlet products = [];\n\nif (response.items && Array.isArray(response.items)) {\n  products = response.items;\n  console.log(`Found ${products.length} products in response.items`);\n} else if (response.data && Array.isArray(response.data)) {\n  products = response.data;\n  console.log(`Found ${products.length} products in response.data`);\n} else if (Array.isArray(response)) {\n  products = response;\n  console.log(`Response itself is array with ${products.length} products`);\n}\n\n// Return ALL products\nif (products.length > 0) {\n  console.log('Returning', products.length, 'products');\n  return products.map(product => ({ json: product }));\n} else {\n  console.log('No products found in response');\n  return [];\n}"
+      },
+      "id": "32a13516-0b9c-4305-87b6-0c70eb42553b",
+      "name": "Split Products",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -832,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract stock data from JTL FFN API response\nconst response = $input.first().json;\n\nconsole.log('Stock response structure:', JSON.stringify(response, null, 2));\n\nlet stocks = [];\n\nif (response.items && Array.isArray(response.items)) {\n  stocks = response.items;\n  console.log(`Found ${stocks.length} stock items in response.items`);\n} else if (response.data && Array.isArray(response.data)) {\n  stocks = response.data;\n  console.log(`Found ${stocks.length} stock items in response.data`);\n} else if (Array.isArray(response)) {\n  stocks = response;\n  console.log(`Response itself is array with ${stocks.length} stock items`);\n}\n\n// Return ALL stock items\nif (stocks.length > 0) {\n  console.log('Returning', stocks.length, 'stock items');\n  return stocks.map(stock => ({ json: stock }));\n} else {\n  console.log('No stock items found in response');\n  return [];\n}"
+      },
+      "id": "b7994924-1ffd-4957-b216-9cd0ddd9ff98",
+      "name": "Split Stock Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -832,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "advanced": true,
+        "mergeByFields": {
+          "values": [
+            {
+              "field1": "merchantSku",
+              "field2": "merchantSku"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "06740179-22d8-4b9e-a947-0d674a0c9496",
+      "name": "Merge Stock with Products",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        -608,
+        544
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filter products by platform - only Shopify products\n// Process ALL items (node is in \"Run Once for All Items\" mode)\nconst allItems = $input.all();\nconst shopifyProducts = [];\n\nfor (const item of allItems) {\n  const product = item.json;\n  \n  // Check if product has platform attribute\n  let isShopify = false;\n  \n  if (product.attributes && Array.isArray(product.attributes)) {\n    // Look for platform attribute\n    const platformAttr = product.attributes.find(attr => attr.key === 'platform');\n    if (platformAttr && platformAttr.value === 'shopify') {\n      isShopify = true;\n    }\n  }\n  \n  // Also check if platform is directly on product (some API responses might have it)\n  if (!isShopify && product.platform === 'shopify') {\n    isShopify = true;\n  }\n  \n  if (isShopify) {\n    console.log(`Product ${product.merchantSku} is a Shopify product - processing`);\n    shopifyProducts.push({ json: product });\n  } else {\n    console.log(`Product ${product.merchantSku} is NOT a Shopify product (platform: ${product.attributes?.find(attr => attr.key === 'platform')?.value || 'none'}) - skipping`);\n  }\n}\n\nconsole.log(`Filtered ${shopifyProducts.length} Shopify products from ${allItems.length} total products`);\nreturn shopifyProducts;"
+      },
+      "id": "77a7ad5c-ea94-49de-b0fa-4d059f153943",
+      "name": "Filter Shopify Products Only",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -384,
+        544
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://nolimitstestshop.myshopify.com/admin/api/2025-01/graphql.json",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "shopifyOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ query: \"{ products(first: 250) { edges { node { id title handle variants(first: 10) { edges { node { id sku inventoryItem { id } inventoryQuantity } } } } } pageInfo { hasNextPage endCursor } } }\" }) }}",
+        "options": {}
+      },
+      "id": "a377c42f-cc66-4b48-aa26-8f772d6b2bd1",
+      "name": "Get All Shopify Products",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -608,
+        256
+      ],
+      "credentials": {
+        "shopifyOAuth2Api": {
+          "id": "mm5CsYYwOzCKkjSX",
+          "name": "Shopify account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://nolimitstestshop.myshopify.com/admin/api/2025-01/locations.json",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "shopifyOAuth2Api",
+        "options": {}
+      },
+      "id": "bb7ed5b6-41a1-4247-82f1-fd5a036b6b58",
+      "name": "Get Location",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        -1056,
+        256
+      ],
+      "credentials": {
+        "shopifyOAuth2Api": {
+          "id": "mm5CsYYwOzCKkjSX",
+          "name": "Shopify account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract location ID and store it\nconst apiResponse = $input.first().json;\n\nlet locationId = null;\n\nif (apiResponse.locations && apiResponse.locations.length > 0) {\n  const location = apiResponse.locations[0];\n  locationId = `gid://shopify/Location/${location.id}`;\n  console.log(`Found location: ${location.name} (ID: ${locationId})`);\n} else {\n  throw new Error('No locations found in Shopify store');\n}\n\nreturn { json: { locationId: locationId } };"
+      },
+      "id": "1d6348bf-dd9f-4d8a-bb72-c971cd0e4b64",
+      "name": "Extract Location ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -832,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract all variants with SKUs from Shopify products\nconst graphqlResponse = $input.first().json;\nconst products = graphqlResponse.data?.products?.edges || [];\n\nconst allVariants = [];\n\nfor (const productEdge of products) {\n  const product = productEdge.node;\n  const variants = product.variants?.edges || [];\n  \n  for (const variantEdge of variants) {\n    const variant = variantEdge.node;\n    \n    // Only include variants that have a SKU\n    if (variant.sku) {\n      allVariants.push({\n        json: {\n          sku: variant.sku,\n          productId: product.id,\n          productTitle: product.title,\n          productHandle: product.handle,\n          variantId: variant.id,\n          inventoryItemId: variant.inventoryItem.id,\n          currentQuantity: variant.inventoryQuantity || 0\n        }\n      });\n    }\n  }\n}\n\nconsole.log(`Extracted ${allVariants.length} variants with SKUs from Shopify`);\nreturn allVariants;"
+      },
+      "id": "1658e7b9-29cf-4e00-9868-761a3139a33a",
+      "name": "Extract Shopify Variants",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -384,
+        256
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "advanced": true,
+        "mergeByFields": {
+          "values": [
+            {
+              "field1": "merchantSku",
+              "field2": "sku"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "140ecdfc-8d4e-4d30-8dd7-ad2d165ba2f5",
+      "name": "Merge Stock Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        -160,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare data for inventory update from merged data\nconst results = [];\n\nfor (const item of $input.all()) {\n  const mergedData = item.json;\n  \n  // Get stock level from JTL FFN - now directly on the object\n  const stockLevel = mergedData.stockLevel || mergedData.available || 0;\n  \n  // All IDs are already in the correct format from Shopify GraphQL\n  const inventoryItemId = mergedData.inventoryItemId;\n  const productId = mergedData.productId;\n  const variantId = mergedData.variantId;\n  const merchantSku = mergedData.merchantSku || mergedData.sku;\n  const productTitle = mergedData.productTitle;\n  const currentQuantity = mergedData.currentQuantity || 0;\n  \n  // Only update if quantity changed\n  if (stockLevel === currentQuantity) {\n    console.log(`SKU ${merchantSku} - No change needed (${stockLevel})`);\n    continue; // Skip this item\n  }\n  \n  console.log(`Preparing update for ${productTitle} (${merchantSku}): ${currentQuantity} → ${stockLevel}`);\n  \n  results.push({\n    json: {\n      inventoryItemId: inventoryItemId,\n      productId: productId,\n      variantId: variantId,\n      merchantSku: merchantSku,\n      productTitle: productTitle,\n      newQuantity: stockLevel,\n      oldQuantity: currentQuantity\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "8b5f857e-db2e-4bd4-87e1-4e7db44a062d",
+      "name": "Prepare Update Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        64,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Add location ID from the location node to each item\nconst locationData = $('Extract Location ID').first().json;\nconst updateData = $input.first().json;\n\n// Skip if no update needed (null returned from Prepare Update Data)\nif (!updateData || !updateData.inventoryItemId) {\n  return null;\n}\n\nreturn {\n  json: {\n    ...updateData,\n    locationId: locationData.locationId\n  }\n};"
+      },
+      "id": "9349d51e-81bc-413a-9fc5-899635fe16f0",
+      "name": "Add Location to Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        288,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://nolimitstestshop.myshopify.com/admin/api/2025-01/graphql.json",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "shopifyOAuth2Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ query: \"mutation inventorySetQuantities($input: InventorySetQuantitiesInput!) { inventorySetQuantities(input: $input) { inventoryAdjustmentGroup { reason } userErrors { field message } } }\", variables: { input: { reason: \"correction\", name: \"available\", ignoreCompareQuantity: true, quantities: [{ inventoryItemId: $json.inventoryItemId, locationId: $json.locationId, quantity: $json.newQuantity }] } } }) }}",
+        "options": {}
+      },
+      "id": "987623b6-ea2e-4c0e-869c-ee2d000fb918",
+      "name": "Update Inventory (GraphQL)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        512,
+        448
+      ],
+      "credentials": {
+        "shopifyOAuth2Api": {
+          "id": "mm5CsYYwOzCKkjSX",
+          "name": "Shopify account 3"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get data from previous nodes\nconst mutationData = $('Add Location to Update').item.json;\nconst graphqlResponse = $input.first().json;\n\n// Check for errors in GraphQL response\nif (graphqlResponse.data?.inventorySetQuantities?.userErrors?.length > 0) {\n  const errors = graphqlResponse.data.inventorySetQuantities.userErrors;\n  console.error('GraphQL mutation errors:', errors);\n  throw new Error(JSON.stringify(errors));\n}\n\nconst successLog = {\n  timestamp: new Date().toISOString(),\n  merchantSku: mutationData.merchantSku,\n  productTitle: mutationData.productTitle,\n  oldQuantity: mutationData.oldQuantity,\n  newQuantity: mutationData.newQuantity,\n  inventoryItemId: mutationData.inventoryItemId,\n  locationId: mutationData.locationId,\n  platform: 'shopify',\n  action: 'inventory_updated',\n  status: 'success'\n};\n\nconsole.log('Inventory updated successfully:', successLog);\n\nreturn [{ json: successLog }];"
+      },
+      "id": "b03282ce-5e9e-4a71-b1da-2ff6aab9d879",
+      "name": "Log Success",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        736,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Try to get merchant SKU from various sources\nlet merchantSku = 'unknown';\nlet productTitle = 'unknown';\ntry {\n  const prepareData = $('Add Location to Update').item?.json;\n  if (prepareData?.merchantSku) {\n    merchantSku = prepareData.merchantSku;\n    productTitle = prepareData.productTitle || 'unknown';\n  }\n} catch (e) {\n  console.log('Could not get data from Add Location to Update');\n}\n\nconst error = $input.first().json.error || JSON.stringify($input.first().json);\n\nconst errorLog = {\n  timestamp: new Date().toISOString(),\n  merchantSku: merchantSku,\n  productTitle: productTitle,\n  platform: 'shopify',\n  action: 'inventory_update_failed',\n  error: error,\n  errorDetails: $input.first().json\n};\n\nconsole.error('Inventory update failed:', errorLog);\n\nreturn [{ json: errorLog }];"
+      },
+      "id": "94637388-1c93-4840-901c-298935ebb018",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        736,
+        544
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## JTL FFN → Shopify Inventory Sync (Merge-Based)\n\n**Purpose**: Sync stock levels from JTL FFN to Shopify using GraphQL API with merge strategy\n\n**Frequency**: Every 15 minutes\n\n**Flow**:\n1. Fetch products with stock from JTL FFN\n2. Get Shopify location ID\n3. Fetch ALL Shopify products with variants\n4. Extract variants with SKUs from Shopify\n5. Filter JTL products for Shopify platform only\n6. **MERGE** JTL stock data with Shopify variants by SKU\n7. Prepare updates (only if quantity changed)\n8. Add location ID to each update\n9. Update inventory using inventorySetQuantities mutation\n10. Log success/errors\n\n**Key Features**:\n- ✅ Handles variants correctly (no bundle errors)\n- ✅ Only updates products with SKU matches\n- ✅ Skips items where quantity hasn't changed\n- ✅ Processes all products in one workflow run\n\n**API Method**: GraphQL (inventorySetQuantities)\n**Required Permission**: write_inventory\n\n**Use Case**:\n- One workflow instance per merchant\n- Merchant's Shopify store uses your JTL FFN warehouse\n- Keeps Shopify stock in sync with warehouse stock\n\n**Setup per Merchant**:\n1. Duplicate this workflow\n2. Rename: [Merchant Name] - Inventory Sync\n3. Update Shopify credential (needs write_inventory scope)\n4. JTL FFN credential stays the same\n5. Activate\n\n**Credentials Needed**:\n- JTL FFN OAuth2 (your warehouse)\n- Shopify OAuth2 with write_inventory permission",
+        "height": 550,
+        "width": 350
+      },
+      "id": "40adc344-84bd-49b7-8dc2-7416a49b7369",
+      "name": "Documentation",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -2048,
+        160
+      ]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Stock from JTL FFN",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Products from JTL FFN",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Location",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Stock from JTL FFN": {
+      "main": [
+        [
+          {
+            "node": "Split Stock Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Products from JTL FFN": {
+      "main": [
+        [
+          {
+            "node": "Split Products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Products": {
+      "main": [
+        [
+          {
+            "node": "Merge Stock with Products",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Split Stock Data": {
+      "main": [
+        [
+          {
+            "node": "Merge Stock with Products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Stock with Products": {
+      "main": [
+        [
+          {
+            "node": "Filter Shopify Products Only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Shopify Products Only": {
+      "main": [
+        [
+          {
+            "node": "Merge Stock Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Shopify Products": {
+      "main": [
+        [
+          {
+            "node": "Extract Shopify Variants",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Location": {
+      "main": [
+        [
+          {
+            "node": "Extract Location ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Location ID": {
+      "main": [
+        [
+          {
+            "node": "Get All Shopify Products",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Shopify Variants": {
+      "main": [
+        [
+          {
+            "node": "Merge Stock Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Stock Data": {
+      "main": [
+        [
+          {
+            "node": "Prepare Update Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Update Data": {
+      "main": [
+        [
+          {
+            "node": "Add Location to Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add Location to Update": {
+      "main": [
+        [
+          {
+            "node": "Update Inventory (GraphQL)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Inventory (GraphQL)": {
+      "main": [
+        [
+          {
+            "node": "Log Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "923562b6e5c9b7345019a0c847b18dcbbb522ef8ae30ba6cde59400a4e3f061c"
+  }
+}
