@@ -65,6 +65,7 @@
   "navbar": {
     "dashboard": "Dashboard",
     "orders": "Orders",
+    "fulfillment": "Fulfillment",
     "products": "Products",
     "inbounds": "Inbounds",
     "returns": "Returns",
