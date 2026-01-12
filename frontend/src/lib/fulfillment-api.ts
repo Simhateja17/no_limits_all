@@ -93,13 +93,14 @@ export interface TrackingInfo {
 }
 
 export interface FulfillmentDashboardStats {
+  totalOrders: number;
   pendingFulfillment: number;
   inProgress: number;
   onHold: number;
-  completedToday: number;
-  completedThisWeek: number;
+  shipped: number;
+  delivered: number;
   avgFulfillmentTime: number; // in hours
-  slaAtRisk: number; // orders at risk of missing SLA
+  todayShipments: number;
 }
 
 export interface FulfillmentAuditEntry {
@@ -298,6 +299,61 @@ export const fulfillmentApi = {
   // Shipping Carriers
   async getCarriers(): Promise<Array<{ id: string; name: string; trackingUrlTemplate: string }>> {
     const response = await api.get('/fulfillment/carriers');
+    return response.data.data;
+  },
+
+  // ============= JTL FFN INTEGRATION =============
+
+  // JTL Connection Status
+  async getJTLStatus(clientId?: string): Promise<{ connected: boolean; message: string }> {
+    const response = await api.get('/fulfillment/jtl/status', { params: { clientId } });
+    return response.data.data;
+  },
+
+  // JTL Shipping Methods
+  async getJTLShippingMethods(clientId?: string): Promise<Array<{
+    shippingMethodId: string;
+    fulfillerId: string;
+    name: string;
+    carrierCode?: string;
+    carrierName?: string;
+    shippingType: string;
+    trackingUrlSchema?: string;
+    cutoffTime?: string;
+  }>> {
+    const response = await api.get('/fulfillment/shipping-methods', { params: { clientId } });
+    return response.data.data;
+  },
+
+  // JTL Warehouses
+  async getJTLWarehouses(clientId?: string): Promise<Array<{
+    warehouseId: string;
+    name: string;
+    fulfillerId: string;
+  }>> {
+    const response = await api.get('/fulfillment/warehouses', { params: { clientId } });
+    return response.data.data;
+  },
+
+  // Sync order to JTL FFN
+  async syncOrderToJTL(orderId: string): Promise<{ success: boolean; outboundId?: string; error?: string }> {
+    const response = await api.post(`/fulfillment/orders/${orderId}/sync-to-jtl`);
+    return response.data;
+  },
+
+  // Create fulfillment with optional JTL sync
+  async createFulfillmentWithJTL(orderId: string, input: {
+    trackingNumber?: string;
+    carrier?: string;
+    notifyCustomer?: boolean;
+    syncToJTL?: boolean;
+  }): Promise<{
+    success: boolean;
+    fulfillmentState: string;
+    trackingNumber: string | null;
+    jtlOutboundId?: string;
+  }> {
+    const response = await api.post(`/fulfillment/orders/${orderId}/fulfill`, input);
     return response.data.data;
   },
 };

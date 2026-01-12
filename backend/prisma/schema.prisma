@@ -832,6 +832,14 @@ model Order {
   
   // Flags
   isOnHold            Boolean     @default(false)
+  holdReason          String?                             // AWAITING_PAYMENT, HIGH_RISK_OF_FRAUD, INCORRECT_ADDRESS, INVENTORY_OUT_OF_STOCK, OTHER
+  holdNotes           String?                             // Additional notes for hold reason
+  holdPlacedAt        DateTime?                           // When the hold was placed
+  holdPlacedBy        String?                             // User ID who placed the hold
+  holdReleasedAt      DateTime?                           // When the hold was released
+  holdReleasedBy      String?                             // User ID who released the hold
+  trackingUrl         String?                             // Full tracking URL
+
   isReplacement       Boolean     @default(false)
   isCancelled         Boolean     @default(false)
   cancelledAt         DateTime?
