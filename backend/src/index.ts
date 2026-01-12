@@ -5,13 +5,25 @@ import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
 import { createServer } from 'http';
 import { env, prisma } from './config/index.js';
-import routes, { 
-  initializeIntegrations, 
-  initializeEnhancedSync, 
+import routes, {
+  initializeIntegrations,
+  initializeEnhancedSync,
   startEnhancedSyncProcessors,
   stopEnhancedSyncProcessors
 } from './routes/index.js';
 import { initializeSocket } from './services/socket.js';
+import { enforceSecurityConfig } from './config/security-validator.js';
+import {
+  apiLimiter,
+  securityHeaders,
+  sanitizeBody,
+  validatePagination,
+  blockSuspiciousRequests,
+  getCsrfToken,
+} from './middleware/security.js';
+
+// Run security configuration check on startup
+enforceSecurityConfig();
 
 const app = express();
 
@@ -37,16 +49,33 @@ const corsOptions: CorsOptions = {
 app.use(helmet());
 app.use(cors(corsOptions));
 
-// Debug logging for CORS
-app.use((req, res, next) => {
-  console.log(`${req.method} ${req.path} - Origin: ${req.headers.origin || 'no-origin'}`);
-  next();
-});
+// Security middleware
+app.use(securityHeaders);
+app.use(apiLimiter);
 
-app.use(morgan('dev'));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Only log requests in development
+if (env.nodeEnv !== 'production') {
+  app.use((req, _res, next) => {
+    console.log(`${req.method} ${req.path} - Origin: ${req.headers.origin || 'no-origin'}`);
+    next();
+  });
+  app.use(morgan('dev'));
+} else {
+  // Production: minimal logging, no sensitive data
+  app.use(morgan('combined'));
+}
+
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
+
+// Input validation and sanitization
+app.use(sanitizeBody);
+app.use(validatePagination);
+app.use(blockSuspiciousRequests);
+
+// CSRF token endpoint
+app.get('/api/csrf-token', getCsrfToken);
 
 // Initialize integrations with prisma client
 initializeIntegrations(prisma);
@@ -94,11 +123,26 @@ app.get('/', (_req: Request, res: Response) => {
 
 // Error handling middleware
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-  console.error('Error:', err);
-  console.error('Stack:', err.stack);
-  res.status(err.status || 500).json({
-    error: err.message || 'Internal server error',
-  });
+  // Log full error details server-side
+  console.error('Error:', err.message);
+  if (env.nodeEnv !== 'production') {
+    console.error('Stack:', err.stack);
+  }
+
+  // Return sanitized error to client
+  const statusCode = err.status || 500;
+  const response: { error: string; details?: string } = {
+    error: statusCode === 500
+      ? 'Internal server error'  // Don't expose internal error messages
+      : err.message || 'An error occurred',
+  };
+
+  // Only include details in development
+  if (env.nodeEnv !== 'production' && err.details) {
+    response.details = err.details;
+  }
+
+  res.status(statusCode).json(response);
 });
 
 // Create HTTP server
@@ -113,9 +157,11 @@ const PORT = Number(env.port);
 const HOST = process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost';
 
 httpServer.listen(PORT, HOST, async () => {
-  console.log(`\n🚀 Server running on ${HOST}:${PORT} in ${env.nodeEnv} mode`);
-  console.log(`📍 FRONTEND_URL: ${env.frontendUrl}`);
-  console.log(`💾 DATABASE_URL configured: ${env.databaseUrl ? 'YES' : 'NO'}`);
+  console.log(`\n🚀 Server running on port ${PORT} in ${env.nodeEnv} mode`);
+  if (env.nodeEnv !== 'production') {
+    console.log(`📍 FRONTEND_URL: ${env.frontendUrl}`);
+    console.log(`💾 DATABASE_URL configured: ${env.databaseUrl ? 'YES' : 'NO'}`);
+  }
   console.log(`🔌 Socket.IO ready for connections`);
 
   // Initialize background job queue

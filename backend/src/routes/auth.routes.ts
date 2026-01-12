@@ -8,12 +8,13 @@ import {
   changePassword,
 } from '../controllers/auth.controller.js';
 import { authenticate, requireSuperAdmin } from '../middleware/auth.js';
+import { authLimiter } from '../middleware/security.js';
 
 const router = Router();
 
-// Public routes
-router.post('/login', login);
-router.post('/refresh', refreshToken);
+// Public routes (with strict rate limiting to prevent brute force)
+router.post('/login', authLimiter, login);
+router.post('/refresh', authLimiter, refreshToken);
 
 // Protected routes (require authentication)
 router.post('/logout', authenticate, logout);

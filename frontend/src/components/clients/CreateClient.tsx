@@ -372,11 +372,23 @@ export function CreateClient({ backUrl }: CreateClientProps) {
         return;
       }
 
+      // Generate a secure temporary password
+      const generateSecurePassword = () => {
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
+        let password = '';
+        const randomValues = new Uint32Array(16);
+        crypto.getRandomValues(randomValues);
+        for (let i = 0; i < 16; i++) {
+          password += chars[randomValues[i] % chars.length];
+        }
+        return password;
+      };
+
       const clientData = {
         name: companyName.trim(),
         companyName: companyName.trim(),
         email: email.trim(),
-        password: 'temp123456', // Temporary password
+        password: generateSecurePassword(), // Secure temporary password (user will reset via email)
         isActive: true,
         pricing: {
           templateId: selectedTemplate?.id,
