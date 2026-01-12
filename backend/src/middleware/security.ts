@@ -1,6 +1,7 @@
 /**
  * Security Middleware
  * Provides rate limiting, CSRF protection, and security headers
+ * Supports both in-memory and Redis backends for rate limiting
  */
 
 import { Request, Response, NextFunction } from 'express';
@@ -13,8 +14,67 @@ interface RateLimitEntry {
   resetTime: number;
 }
 
-// In-memory store (use Redis in production)
-const rateLimitStore = new Map<string, RateLimitEntry>();
+// Rate limit store interface
+interface RateLimitStore {
+  get(key: string): RateLimitEntry | undefined;
+  set(key: string, entry: RateLimitEntry): void;
+  cleanup(): void;
+  size: number;
+}
+
+// In-memory rate limit store (default)
+class MemoryRateLimitStore implements RateLimitStore {
+  private store = new Map<string, RateLimitEntry>();
+
+  get size(): number {
+    return this.store.size;
+  }
+
+  get(key: string): RateLimitEntry | undefined {
+    return this.store.get(key);
+  }
+
+  set(key: string, entry: RateLimitEntry): void {
+    this.store.set(key, entry);
+  }
+
+  cleanup(): void {
+    const now = Date.now();
+    for (const [k, v] of this.store) {
+      if (v.resetTime < now) {
+        this.store.delete(k);
+      }
+    }
+  }
+}
+
+// Redis rate limit store (optional, for production)
+let redisClient: any = null;
+let useRedis = false;
+
+// Initialize Redis if REDIS_URL is set
+if (process.env.REDIS_URL) {
+  import('ioredis')
+    .then(({ default: Redis }) => {
+      redisClient = new Redis(process.env.REDIS_URL as string);
+      redisClient.on('connect', () => {
+        console.log('[Security] Redis rate limiter connected');
+        useRedis = true;
+      });
+      redisClient.on('error', (err: Error) => {
+        console.error('[Security] Redis error:', err.message);
+        useRedis = false;
+      });
+    })
+    .catch(() => {
+      console.log('[Security] ioredis not installed, using in-memory rate limiting');
+    });
+} else if (process.env.NODE_ENV === 'production') {
+  console.warn('[Security] REDIS_URL not set - using in-memory rate limiting (not recommended for production)');
+}
+
+// In-memory fallback store
+const memoryStore = new MemoryRateLimitStore();
 
 interface RateLimitOptions {
   windowMs: number;      // Time window in milliseconds
@@ -27,6 +87,7 @@ interface RateLimitOptions {
 /**
  * Rate limiting middleware
  * Protects against brute force and DDoS attacks
+ * Uses Redis if available, falls back to in-memory store
  */
 export function rateLimit(options: RateLimitOptions) {
   const {
@@ -36,43 +97,75 @@ export function rateLimit(options: RateLimitOptions) {
     message = 'Too many requests, please try again later.',
   } = options;
 
-  return (req: Request, res: Response, next: NextFunction): void => {
-    const key = keyGenerator(req);
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const key = `ratelimit:${keyGenerator(req)}`;
     const now = Date.now();
 
-    let entry = rateLimitStore.get(key);
+    try {
+      let count: number;
+      let resetTime: number;
 
-    // Clean up expired entries periodically
-    if (rateLimitStore.size > 10000) {
-      for (const [k, v] of rateLimitStore) {
-        if (v.resetTime < now) {
-          rateLimitStore.delete(k);
+      if (useRedis && redisClient) {
+        // Use Redis for distributed rate limiting
+        const multi = redisClient.multi();
+        multi.incr(key);
+        multi.pttl(key);
+
+        const results = await multi.exec();
+        count = results[0][1];
+        const ttl = results[1][1];
+
+        if (ttl === -1) {
+          // Key exists but has no expiry, set it
+          await redisClient.pexpire(key, windowMs);
+          resetTime = now + windowMs;
+        } else if (ttl === -2) {
+          // Key doesn't exist, this is the first request
+          await redisClient.pexpire(key, windowMs);
+          resetTime = now + windowMs;
+        } else {
+          resetTime = now + ttl;
         }
+      } else {
+        // Use in-memory store
+        let entry = memoryStore.get(key);
+
+        // Clean up periodically
+        if (memoryStore.size > 10000) {
+          memoryStore.cleanup();
+        }
+
+        if (!entry || entry.resetTime < now) {
+          entry = {
+            count: 1,
+            resetTime: now + windowMs,
+          };
+          memoryStore.set(key, entry);
+        } else {
+          entry.count++;
+        }
+
+        count = entry.count;
+        resetTime = entry.resetTime;
       }
+
+      // Set rate limit headers
+      res.setHeader('X-RateLimit-Limit', maxRequests.toString());
+      res.setHeader('X-RateLimit-Remaining', Math.max(0, maxRequests - count).toString());
+      res.setHeader('X-RateLimit-Reset', resetTime.toString());
+
+      if (count > maxRequests) {
+        res.setHeader('Retry-After', Math.ceil((resetTime - now) / 1000).toString());
+        res.status(429).json({ error: message });
+        return;
+      }
+
+      next();
+    } catch (error) {
+      // On error, allow request through but log warning
+      console.error('[Security] Rate limit error:', error);
+      next();
     }
-
-    if (!entry || entry.resetTime < now) {
-      entry = {
-        count: 1,
-        resetTime: now + windowMs,
-      };
-      rateLimitStore.set(key, entry);
-    } else {
-      entry.count++;
-    }
-
-    // Set rate limit headers
-    res.setHeader('X-RateLimit-Limit', maxRequests.toString());
-    res.setHeader('X-RateLimit-Remaining', Math.max(0, maxRequests - entry.count).toString());
-    res.setHeader('X-RateLimit-Reset', entry.resetTime.toString());
-
-    if (entry.count > maxRequests) {
-      res.setHeader('Retry-After', Math.ceil((entry.resetTime - now) / 1000).toString());
-      res.status(429).json({ error: message });
-      return;
-    }
-
-    next();
   };
 }
 
