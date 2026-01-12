@@ -1,0 +1,1 @@
+export { InboundsTable } from './InboundsTable';
