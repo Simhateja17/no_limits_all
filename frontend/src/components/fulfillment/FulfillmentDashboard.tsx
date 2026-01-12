@@ -47,13 +47,14 @@ export function FulfillmentDashboard({ basePath = '/admin/fulfillment' }: Fulfil
         console.error('Error fetching fulfillment stats:', err);
         // Set mock data for demo if API not ready
         setStats({
+          totalOrders: 250,
           pendingFulfillment: 42,
           inProgress: 15,
           onHold: 7,
-          completedToday: 128,
-          completedThisWeek: 856,
+          shipped: 128,
+          delivered: 856,
           avgFulfillmentTime: 4.2,
-          slaAtRisk: 3,
+          todayShipments: 24,
         });
       } finally {
         setLoading(false);
@@ -165,11 +166,11 @@ export function FulfillmentDashboard({ basePath = '/admin/fulfillment' }: Fulfil
   };
 
   const tabs: { key: TabType; label: string; count?: number }[] = [
-    { key: 'all', label: 'All Orders', count: stats ? stats.pendingFulfillment + stats.inProgress + stats.onHold : undefined },
+    { key: 'all', label: 'All Orders', count: stats?.totalOrders },
     { key: 'open', label: 'Pending', count: stats?.pendingFulfillment },
     { key: 'inProgress', label: 'In Progress', count: stats?.inProgress },
     { key: 'onHold', label: 'On Hold', count: stats?.onHold },
-    { key: 'completed', label: 'Completed', count: stats?.completedToday },
+    { key: 'completed', label: 'Shipped', count: stats?.shipped },
   ];
 
   return (
@@ -250,8 +251,8 @@ export function FulfillmentDashboard({ basePath = '/admin/fulfillment' }: Fulfil
           onClick={() => setActiveTab('onHold')}
         />
         <FulfillmentStatsCard
-          title="Completed Today"
-          value={loading ? '...' : stats?.completedToday || 0}
+          title="Shipped Today"
+          value={loading ? '...' : stats?.todayShipments || 0}
           icon={<CheckCircle size={24} />}
           color="green"
           trend={{ value: 12, isPositive: true }}
@@ -264,10 +265,10 @@ export function FulfillmentDashboard({ basePath = '/admin/fulfillment' }: Fulfil
           color="gray"
         />
         <FulfillmentStatsCard
-          title="SLA At Risk"
-          value={loading ? '...' : stats?.slaAtRisk || 0}
+          title="Delivered"
+          value={loading ? '...' : stats?.delivered || 0}
           icon={<AlertTriangle size={24} />}
-          color={stats?.slaAtRisk && stats.slaAtRisk > 0 ? 'red' : 'green'}
+          color="green"
         />
       </div>
 

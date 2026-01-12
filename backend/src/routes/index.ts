@@ -7,6 +7,7 @@ import chatRoutes from './chat.routes.js';
 import dataRoutes from './data.routes.js';
 import shippingMethodsRoutes from './shipping-methods.routes.js';
 import notificationsRoutes from './notifications.routes.js';
+import fulfillmentRoutes from './fulfillment.routes.js';
 import integrationsRoutes, {
   initializeIntegrations,
   startSyncScheduler,
@@ -45,6 +46,9 @@ router.use('/shipping-methods', shippingMethodsRoutes);
 
 // Notifications routes
 router.use('/notifications', notificationsRoutes);
+
+// Fulfillment routes (JTL FFN integration)
+router.use('/fulfillment', fulfillmentRoutes);
 
 // Integrations routes (Shopify, WooCommerce, JTL)
 router.use('/integrations', integrationsRoutes);

@@ -1021,6 +1021,218 @@ export class JTLService {
     }
   }
 
+  // ============= FULFILLMENT OPERATIONS =============
+
+  /**
+   * Get fulfillment statistics from outbounds
+   * Aggregates outbound status counts for dashboard
+   */
+  async getFulfillmentStats(): Promise<{
+    total: number;
+    pending: number;
+    processing: number;
+    shipped: number;
+    delivered: number;
+    cancelled: number;
+  }> {
+    try {
+      // Get all outbounds and aggregate by status
+      const outbounds = await this.getOutbounds({ limit: 1000 });
+
+      const stats = {
+        total: outbounds.length,
+        pending: 0,
+        processing: 0,
+        shipped: 0,
+        delivered: 0,
+        cancelled: 0,
+      };
+
+      for (const outbound of outbounds) {
+        const status = outbound.status.toLowerCase();
+        if (status === 'new' || status === 'pending') {
+          stats.pending++;
+        } else if (status === 'processing' || status === 'picking' || status === 'packing') {
+          stats.processing++;
+        } else if (status === 'shipped') {
+          stats.shipped++;
+        } else if (status === 'delivered') {
+          stats.delivered++;
+        } else if (status === 'cancelled') {
+          stats.cancelled++;
+        }
+      }
+
+      return stats;
+    } catch (error) {
+      console.error('[JTL] Failed to get fulfillment stats:', error);
+      return {
+        total: 0,
+        pending: 0,
+        processing: 0,
+        shipped: 0,
+        delivered: 0,
+        cancelled: 0,
+      };
+    }
+  }
+
+  /**
+   * Hold an outbound by setting low priority
+   * JTL FFN doesn't have explicit hold, so we use priority -5 and internal notes
+   *
+   * @param outboundId - JTL FFN outbound ID
+   * @param reason - Hold reason
+   * @param notes - Additional notes
+   */
+  async holdOutbound(outboundId: string, reason: string, notes?: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const internalNote = `HOLD: ${reason}${notes ? ` - ${notes}` : ''}`;
+
+      await this.updateOutbound(outboundId, {
+        priority: -5,  // Lowest priority
+        internalNote,
+      });
+
+      console.log(`[JTL] Held outbound ${outboundId}: ${reason}`);
+      return { success: true };
+    } catch (error: any) {
+      console.error(`[JTL] Failed to hold outbound ${outboundId}:`, error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Release an outbound from hold by restoring normal priority
+   *
+   * @param outboundId - JTL FFN outbound ID
+   * @param priority - Priority to restore (default: 0)
+   */
+  async releaseOutbound(outboundId: string, priority: number = 0): Promise<{ success: boolean; error?: string }> {
+    try {
+      await this.updateOutbound(outboundId, {
+        priority,
+        internalNote: 'Hold released - ready for processing',
+      });
+
+      console.log(`[JTL] Released outbound ${outboundId} with priority ${priority}`);
+      return { success: true };
+    } catch (error: any) {
+      console.error(`[JTL] Failed to release outbound ${outboundId}:`, error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Add shipping notification (tracking) to outbound
+   * Used when tracking information becomes available
+   *
+   * @param outboundId - JTL FFN outbound ID
+   * @param trackingInfo - Tracking information
+   */
+  async addShippingNotification(outboundId: string, trackingInfo: {
+    trackingNumber: string;
+    carrierCode: string;
+    carrierName?: string;
+    shippedAt?: string;
+    trackingUrl?: string;
+  }): Promise<{ success: boolean; error?: string }> {
+    try {
+      // JTL FFN shipping notifications are typically created by the warehouse
+      // This endpoint allows manual tracking updates if supported
+      await this.request(`/v1/merchant/outbounds/${outboundId}/shipping-notifications`, {
+        method: 'POST',
+        body: JSON.stringify({
+          trackingNumber: trackingInfo.trackingNumber,
+          carrierCode: trackingInfo.carrierCode,
+          carrierName: trackingInfo.carrierName,
+          shippedAt: trackingInfo.shippedAt || new Date().toISOString(),
+        }),
+      });
+
+      console.log(`[JTL] Added shipping notification to outbound ${outboundId}`);
+      return { success: true };
+    } catch (error: any) {
+      // Some JTL FFN setups may not support manual shipping notifications
+      console.error(`[JTL] Failed to add shipping notification to ${outboundId}:`, error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Get shipping notifications for an outbound
+   *
+   * @param outboundId - JTL FFN outbound ID
+   */
+  async getShippingNotifications(outboundId: string): Promise<{
+    success: boolean;
+    data?: Array<{
+      trackingNumber: string;
+      carrierCode: string;
+      carrierName?: string;
+      shippedAt: string;
+      trackingUrl?: string;
+    }>;
+    error?: string;
+  }> {
+    try {
+      const response = await this.request<{
+        shippingNotifications: Array<{
+          trackingNumber: string;
+          carrierCode: string;
+          carrierName?: string;
+          shippedAt: string;
+          trackingUrl?: string;
+        }>;
+      }>(`/v1/merchant/outbounds/${outboundId}/shipping-notifications`);
+
+      return { success: true, data: response.shippingNotifications || [] };
+    } catch (error: any) {
+      console.error(`[JTL] Failed to get shipping notifications for ${outboundId}:`, error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Poll for outbound status changes since last check
+   * Returns outbounds that have been updated
+   *
+   * @param since - ISO timestamp to poll from
+   */
+  async pollOutboundChanges(since: string): Promise<{
+    success: boolean;
+    updates?: Array<{
+      outboundId: string;
+      merchantOutboundNumber: string;
+      previousStatus?: string;
+      currentStatus: string;
+      updatedAt: string;
+      shippingInfo?: {
+        trackingNumber?: string;
+        carrier?: string;
+        shippedAt?: string;
+      };
+    }>;
+    error?: string;
+  }> {
+    try {
+      const updates = await this.getOutboundUpdates({ since });
+
+      const processedUpdates = updates.map((update) => ({
+        outboundId: update.id,
+        merchantOutboundNumber: update.data.merchantOutboundNumber,
+        currentStatus: update.data.status,
+        updatedAt: update.timestamp,
+      }));
+
+      console.log(`[JTL] Polled ${processedUpdates.length} outbound updates since ${since}`);
+      return { success: true, updates: processedUpdates };
+    } catch (error: any) {
+      console.error('[JTL] Failed to poll outbound changes:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
   // ============= HELPERS =============
 
   private delay(ms: number): Promise<void> {
