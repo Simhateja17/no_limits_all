@@ -32,6 +32,7 @@ const navItemsByRole: Record<UserRole, { key: string; href: string }[]> = {
   ADMIN: [
     { key: 'dashboard', href: '/admin/dashboard' },
     { key: 'orders', href: '/admin/orders' },
+    { key: 'fulfillment', href: '/admin/fulfillment' },
     { key: 'products', href: '/admin/products' },
     { key: 'inbounds', href: '/admin/inbounds' },
     { key: 'returns', href: '/admin/returns' },
@@ -43,6 +44,7 @@ const navItemsByRole: Record<UserRole, { key: string; href: string }[]> = {
   SUPER_ADMIN: [
     { key: 'dashboard', href: '/admin/dashboard' },
     { key: 'orders', href: '/admin/orders' },
+    { key: 'fulfillment', href: '/admin/fulfillment' },
     { key: 'products', href: '/admin/products' },
     { key: 'inbounds', href: '/admin/inbounds' },
     { key: 'returns', href: '/admin/returns' },

@@ -65,11 +65,13 @@
   "navbar": {
     "dashboard": "Dashboard",
     "orders": "Aufträge",
+    "fulfillment": "Fulfillment",
     "products": "Produkte",
     "inbounds": "Wareneingänge",
     "returns": "Retouren",
     "chat": "Chat",
     "channels": "Channel",
+    "shipping": "Versand",
     "tasks": "Aufgaben",
     "clients": "Kunden",
     "employees": "Mitarbeiter",
