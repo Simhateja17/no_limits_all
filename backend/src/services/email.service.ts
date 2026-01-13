@@ -534,14 +534,14 @@ export async function sendEmail(options: EmailOptions): Promise<EmailResult> {
       from: options.from || DEFAULT_FROM,
       to: Array.isArray(options.to) ? options.to : [options.to],
       subject: options.subject,
-      html,
-      text,
+      html: html || '',
+      text: text,
       replyTo: options.replyTo,
       attachments: options.attachments?.map((a) => ({
         filename: a.filename,
         content: a.content,
       })),
-    });
+    } as Parameters<typeof resendClient.emails.send>[0]);
 
     logger.info('Email sent successfully', {
       to: options.to,

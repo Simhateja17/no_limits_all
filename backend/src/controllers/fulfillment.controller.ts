@@ -126,7 +126,7 @@ export const getDashboardStats = async (req: Request, res: Response): Promise<vo
         where: {
           ...clientFilter,
           isCancelled: false,
-          fulfillmentState: { in: ['PROCESSING', 'PICKING', 'PACKING'] },
+          fulfillmentState: { in: ['READY_FOR_PICKING', 'PICKING', 'PACKING'] },
         },
       }),
       // On hold
@@ -169,7 +169,6 @@ export const getDashboardStats = async (req: Request, res: Response): Promise<vo
           shippedAt: {
             gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
           },
-          orderDate: { not: null },
         },
         select: {
           orderDate: true,
