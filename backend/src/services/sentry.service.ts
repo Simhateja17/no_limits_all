@@ -4,11 +4,12 @@
  */
 
 import * as Sentry from '@sentry/node';
-import { Request, Response, NextFunction, Express } from 'express';
+import { Request, Response, NextFunction, Express, ErrorRequestHandler } from 'express';
 import { logger } from './logger.service.js';
 
 // Track if Sentry is initialized
 let isInitialized = false;
+let expressApp: Express | null = null;
 
 /**
  * Initialize Sentry
@@ -37,8 +38,8 @@ export function initializeSentry(app: Express): boolean {
       integrations: [
         // HTTP integration for tracing requests
         Sentry.httpIntegration(),
-        // Express integration
-        Sentry.expressIntegration({ app }),
+        // Express integration (no arguments in v8)
+        Sentry.expressIntegration(),
       ],
 
       // Before send hook to filter sensitive data
@@ -80,6 +81,7 @@ export function initializeSentry(app: Express): boolean {
       ],
     });
 
+    expressApp = app;
     isInitialized = true;
     logger.info('Sentry initialized successfully');
     return true;
@@ -98,44 +100,43 @@ export function isSentryInitialized(): boolean {
 
 /**
  * Sentry request handler middleware
- * Must be the first middleware
+ * In Sentry v8, request handling is automatic through integrations
+ * This returns a no-op middleware for backward compatibility
  */
 export function sentryRequestHandler(): (req: Request, res: Response, next: NextFunction) => void {
-  if (!isInitialized) {
-    return (_req, _res, next) => next();
-  }
-
-  return Sentry.Handlers.requestHandler();
+  // In Sentry v8, this is handled automatically by expressIntegration()
+  return (_req: Request, _res: Response, next: NextFunction) => next();
 }
 
 /**
  * Sentry tracing middleware
- * Should be after request handler but before routes
+ * In Sentry v8, tracing is automatic through integrations
+ * This returns a no-op middleware for backward compatibility
  */
 export function sentryTracingHandler(): (req: Request, res: Response, next: NextFunction) => void {
-  if (!isInitialized) {
-    return (_req, _res, next) => next();
-  }
-
-  return Sentry.Handlers.tracingHandler();
+  // In Sentry v8, this is handled automatically by expressIntegration()
+  return (_req: Request, _res: Response, next: NextFunction) => next();
 }
 
 /**
  * Sentry error handler middleware
  * Must be before any other error handlers
  */
-export function sentryErrorHandler(): Sentry.Handlers.ErrorRequestHandler {
-  if (!isInitialized) {
-    return ((_err, _req, _res, next) => next(_err)) as Sentry.Handlers.ErrorRequestHandler;
+export function sentryErrorHandler(): ErrorRequestHandler {
+  if (!isInitialized || !expressApp) {
+    return ((_err: Error, _req: Request, _res: Response, next: NextFunction) => next(_err)) as ErrorRequestHandler;
   }
 
-  return Sentry.Handlers.errorHandler({
-    shouldHandleError(error) {
-      // Report all 4xx and 5xx errors
-      const status = (error as any).status || (error as any).statusCode || 500;
-      return status >= 400;
-    },
-  });
+  // In Sentry v8, use setupExpressErrorHandler
+  // Return a middleware that captures errors
+  return ((err: Error, req: Request, res: Response, next: NextFunction) => {
+    // Report all 4xx and 5xx errors
+    const status = (err as any).status || (err as any).statusCode || 500;
+    if (status >= 400) {
+      Sentry.captureException(err);
+    }
+    next(err);
+  }) as ErrorRequestHandler;
 }
 
 /**
