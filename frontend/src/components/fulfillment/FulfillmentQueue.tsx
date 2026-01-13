@@ -14,6 +14,7 @@ interface FulfillmentQueueProps {
   loading?: boolean;
   onOrderClick?: (orderId: string) => void;
   basePath?: string;
+  onRefresh?: () => void;
 }
 
 const statusConfig: Record<FulfillmentOrderStatus, { label: string; color: string; bgColor: string; icon: React.ReactNode }> = {
@@ -39,7 +40,8 @@ export function FulfillmentQueue({
   orders,
   loading = false,
   onOrderClick,
-  basePath = '/admin/fulfillment'
+  basePath = '/admin/fulfillment',
+  onRefresh
 }: FulfillmentQueueProps) {
   const router = useRouter();
   const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
