@@ -169,7 +169,6 @@ export const getDashboardStats = async (req: Request, res: Response): Promise<vo
           shippedAt: {
             gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
           },
-          orderDate: { not: undefined },
         },
         select: {
           orderDate: true,

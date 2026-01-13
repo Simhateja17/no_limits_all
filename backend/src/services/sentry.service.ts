@@ -9,12 +9,11 @@ import { logger } from './logger.service.js';
 
 // Track if Sentry is initialized
 let isInitialized = false;
-let expressApp: Express | null = null;
 
 /**
  * Initialize Sentry
  */
-export function initializeSentry(app: Express): boolean {
+export function initializeSentry(_app: Express): boolean {
   const dsn = process.env.SENTRY_DSN;
 
   if (!dsn) {
@@ -81,7 +80,6 @@ export function initializeSentry(app: Express): boolean {
       ],
     });
 
-    expressApp = app;
     isInitialized = true;
     logger.info('Sentry initialized successfully');
     return true;
@@ -123,7 +121,7 @@ export function sentryTracingHandler(): (req: Request, res: Response, next: Next
  * Must be before any other error handlers
  */
 export function sentryErrorHandler(): ErrorRequestHandler {
-  if (!isInitialized || !expressApp) {
+  if (!isInitialized) {
     return ((_err: Error, _req: Request, _res: Response, next: NextFunction) => next(_err)) as ErrorRequestHandler;
   }
 
