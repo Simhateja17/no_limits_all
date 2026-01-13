@@ -90,7 +90,8 @@
 
 2. **Test Login**
    - Email: `superadmin@nolimits.com`
-   - Password: `password123`
+   - Password: Use password from secure credential store (set during deployment)
+   - **IMPORTANT**: Change default passwords immediately after first login!
 
 3. **Check Browser Console**
    - Open DevTools (F12)

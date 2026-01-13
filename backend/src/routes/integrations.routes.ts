@@ -1038,20 +1038,24 @@ router.post('/webhooks/shopify/:topic', async (req: Request, res: Response) => {
     const shopDomain = req.headers['x-shopify-shop-domain'] as string;
     const hmacHeader = req.headers['x-shopify-hmac-sha256'] as string;
     
-    // Verify webhook signature in production
-    if (process.env.NODE_ENV === 'production' && process.env.SHOPIFY_WEBHOOK_SECRET) {
-      const isValid = ShopifyService.verifyWebhookSignature(
-        JSON.stringify(req.body),
-        hmacHeader,
-        process.env.SHOPIFY_WEBHOOK_SECRET
-      );
-      if (!isValid) {
-        console.warn(`Invalid Shopify webhook signature from ${shopDomain}`);
-        return res.status(401).send('Invalid signature');
-      }
+    // Always verify webhook signature (required for security)
+    const webhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET;
+    if (!webhookSecret) {
+      console.error('[Webhook] SHOPIFY_WEBHOOK_SECRET not configured - rejecting webhook');
+      return res.status(500).send('Webhook secret not configured');
     }
 
-    console.log(`[Webhook] Received Shopify event: ${topic} from ${shopDomain}`);
+    const isValid = ShopifyService.verifyWebhookSignature(
+      JSON.stringify(req.body),
+      hmacHeader,
+      webhookSecret
+    );
+    if (!isValid) {
+      console.warn(`[Webhook] Invalid Shopify signature from ${shopDomain}`);
+      return res.status(401).send('Invalid signature');
+    }
+
+    console.log(`[Webhook] Verified Shopify event: ${topic} from ${shopDomain}`);
     
     // Find channel by shop domain
     const channel = await prisma.channel.findFirst({
@@ -1107,20 +1111,24 @@ router.post('/webhooks/woocommerce/:topic', async (req: Request, res: Response) 
     const webhookSource = req.headers['x-wc-webhook-source'] as string;
     const signature = req.headers['x-wc-webhook-signature'] as string;
     
-    // Verify webhook signature in production
-    if (process.env.NODE_ENV === 'production' && process.env.WOOCOMMERCE_WEBHOOK_SECRET) {
-      const isValid = WooCommerceService.verifyWebhookSignature(
-        JSON.stringify(req.body),
-        signature,
-        process.env.WOOCOMMERCE_WEBHOOK_SECRET
-      );
-      if (!isValid) {
-        console.warn(`[Webhook] Invalid WooCommerce webhook signature from ${webhookSource}`);
-        return res.status(401).send('Invalid signature');
-      }
+    // Always verify webhook signature (required for security)
+    const webhookSecret = process.env.WOOCOMMERCE_WEBHOOK_SECRET;
+    if (!webhookSecret) {
+      console.error('[Webhook] WOOCOMMERCE_WEBHOOK_SECRET not configured - rejecting webhook');
+      return res.status(500).send('Webhook secret not configured');
     }
-    
-    console.log(`[Webhook] Received WooCommerce event: ${topic} from ${webhookSource}`);
+
+    const isValid = WooCommerceService.verifyWebhookSignature(
+      JSON.stringify(req.body),
+      signature,
+      webhookSecret
+    );
+    if (!isValid) {
+      console.warn(`[Webhook] Invalid WooCommerce signature from ${webhookSource}`);
+      return res.status(401).send('Invalid signature');
+    }
+
+    console.log(`[Webhook] Verified WooCommerce event: ${topic} from ${webhookSource}`);
     
     // Find channel by API URL
     let channel = null;
@@ -2662,20 +2670,24 @@ router.post(/^\/webhooks\/shopify-enhanced\/(.+)$/, async (req: Request, res: Re
     const hmacHeader = req.headers['x-shopify-hmac-sha256'] as string;
     const webhookId = req.headers['x-shopify-webhook-id'] as string;
 
-    // Verify webhook signature in production
-    if (process.env.NODE_ENV === 'production' && process.env.SHOPIFY_WEBHOOK_SECRET) {
-      const isValid = ShopifyService.verifyWebhookSignature(
-        JSON.stringify(req.body),
-        hmacHeader,
-        process.env.SHOPIFY_WEBHOOK_SECRET
-      );
-      if (!isValid) {
-        console.warn(`[Webhook] Invalid Shopify signature from ${shopDomain}`);
-        return res.status(401).send('Invalid signature');
-      }
+    // Always verify webhook signature (required for security)
+    const webhookSecret = process.env.SHOPIFY_WEBHOOK_SECRET;
+    if (!webhookSecret) {
+      console.error('[Webhook] SHOPIFY_WEBHOOK_SECRET not configured - rejecting webhook');
+      return res.status(500).send('Webhook secret not configured');
     }
 
-    console.log(`[Webhook] Enhanced Shopify event: ${topic} from ${shopDomain}`);
+    const isValid = ShopifyService.verifyWebhookSignature(
+      JSON.stringify(req.body),
+      hmacHeader,
+      webhookSecret
+    );
+    if (!isValid) {
+      console.warn(`[Webhook] Invalid Shopify enhanced signature from ${shopDomain}`);
+      return res.status(401).send('Invalid signature');
+    }
+
+    console.log(`[Webhook] Verified enhanced Shopify event: ${topic} from ${shopDomain}`);
 
     // Find channel
     const channel = await prisma.channel.findFirst({

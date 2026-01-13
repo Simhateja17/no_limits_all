@@ -110,7 +110,7 @@ Should see:
 1. Visit: https://no-limits-seven.vercel.app/
 2. Login with:
    - Email: `superadmin@nolimits.com`
-   - Password: `password123`
+   - Password: Use the password set during seed/setup (check your `.env` or seed script)
 3. Should successfully login and redirect to dashboard
 
 ### 3. Check Network (Browser DevTools)
@@ -124,7 +124,8 @@ Should see:
 
 ## 📝 Test Accounts
 
-All use password: `password123`
+> **SECURITY WARNING**: Default passwords are set during database seeding.
+> **CHANGE ALL PASSWORDS IMMEDIATELY** after initial deployment using the admin panel.
 
 | Role | Email |
 |------|-------|
@@ -134,6 +135,8 @@ All use password: `password123`
 | Client 1 | papercrush@example.com |
 | Client 2 | caobali@example.com |
 | Client 3 | terppens@example.com |
+
+**Important**: Run the password reset flow or manually update passwords in the database before going live.
 
 ---
 

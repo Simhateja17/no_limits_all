@@ -21,6 +21,7 @@ import { getEncryptionService } from '../encryption.service.js';
 import { ShippingMethodService } from '../shipping-method.service.js';
 import type { ShopifyCredentials, WooCommerceCredentials, JTLCredentials } from './types.js';
 import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
 
 // ============= TYPES =============
 
@@ -1189,10 +1190,9 @@ export class ClientOnboardingService {
   }
 
   private async hashPassword(password: string): Promise<string> {
-    // In production, use bcrypt or argon2
-    // This is a placeholder - DO NOT use in production
-    const crypto = await import('crypto');
-    return crypto.createHash('sha256').update(password).digest('hex');
+    // Use bcrypt with cost factor 12 for secure password hashing
+    const saltRounds = 12;
+    return bcrypt.hash(password, saltRounds);
   }
 
   /**
