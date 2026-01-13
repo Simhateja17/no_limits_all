@@ -1,7 +1,7 @@
 'use client';
 
 import { DashboardLayout } from '@/components/layout';
-import { ContactsList, ChatSection } from '@/components/chats';
+import { ChatSection } from '@/components/chats';
 import { useAuthStore } from '@/lib/store';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useCallback, useRef } from 'react';
@@ -16,10 +16,15 @@ interface OptimisticMessage extends ChatMessage {
   tempId?: string;
 }
 
-// Extended contact with clientId for room creation
-interface ExtendedContact extends Contact {
-  clientId?: string;
-}
+// Admin contact for employee chat
+const adminContact: Contact = {
+  id: 'admin',
+  name: 'Admin Support',
+  avatar: '/imageofchat.png',
+  lastMessage: '',
+  lastMessageDate: new Date().toISOString(),
+  isOnline: true,
+};
 
 // Pagination state
 interface PaginationState {
@@ -28,21 +33,12 @@ interface PaginationState {
   isLoading: boolean;
 }
 
-// Message cache per room (WhatsApp-like instant switching)
-interface MessageCache {
-  messages: OptimisticMessage[];
-  pagination: PaginationState;
-  lastFetched: number;
-}
-
 export default function EmployeeChatPage() {
   const { user, isAuthenticated } = useAuthStore();
   const router = useRouter();
-  const [contacts, setContacts] = useState<ExtendedContact[]>([]);
-  const [selectedContact, setSelectedContact] = useState<ExtendedContact | null>(null);
   const [messages, setMessages] = useState<OptimisticMessage[]>([]);
+  const [roomId, setRoomId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const [pagination, setPagination] = useState<PaginationState>({
     nextCursor: null,
     hasMore: false,
@@ -50,16 +46,13 @@ export default function EmployeeChatPage() {
   });
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Message cache - stores messages per room for instant switching
-  const messageCacheRef = useRef<Map<string, MessageCache>>(new Map());
-
-  // Initialize Supabase Realtime for selected room
-  const { isConnected, typingUsers, sendTypingIndicator, onMessage, onlineUsers } =
+  // Initialize Supabase Realtime for the room
+  const { isConnected, typingUsers, sendTypingIndicator, onMessage } =
     useSupabaseRealtime({
-      roomId: selectedContact?.id,
+      roomId: roomId || undefined,
       userId: user?.id,
       userName: user?.name || user?.email,
-      enabled: !!selectedContact && isAuthenticated,
+      enabled: !!roomId && isAuthenticated,
     });
 
   // Determine if someone is typing (excluding current user)
@@ -68,8 +61,7 @@ export default function EmployeeChatPage() {
   // Log connection status
   useEffect(() => {
     console.log('Employee Chat - Supabase Realtime connection status:', isConnected);
-    console.log('Online users:', onlineUsers);
-  }, [isConnected, onlineUsers]);
+  }, [isConnected]);
 
   useEffect(() => {
     if (!isAuthenticated || user?.role !== 'EMPLOYEE') {
@@ -77,300 +69,109 @@ export default function EmployeeChatPage() {
     }
   }, [isAuthenticated, user, router]);
 
-  // Fetch all clients as contacts on mount
+  // Get or create chat room with admin on mount
   useEffect(() => {
-    const fetchClients = async () => {
+    const initializeChatRoom = async () => {
       try {
-        console.log('=== EMPLOYEE CHAT: FETCHING CLIENTS ===');
         setIsLoading(true);
+        // Get current employee's chat room with admin
+        const roomResponse = await api.get('/chat/my-room');
+        if (roomResponse.data.success) {
+          const { roomId: fetchedRoomId } = roomResponse.data.data;
+          setRoomId(fetchedRoomId);
 
-        // Fetch all clients
-        const response = await api.get('/clients');
-        console.log('Clients response:', response.data);
+          // Fetch messages for this room with pagination
+          const messagesResponse = await api.get(`/chat/rooms/${fetchedRoomId}/messages?limit=50`);
+          if (messagesResponse.data.success) {
+            setMessages(messagesResponse.data.data.map((msg: ChatMessage) => ({ ...msg, status: 'sent' })));
 
-        if (response.data.success && response.data.data) {
-          const clients = response.data.data;
-          console.log(`Found ${clients.length} clients`);
-
-          // Transform clients to contacts format
-          const clientContacts: ExtendedContact[] = clients.map((client: any) => ({
-            id: client.chatRoomId || `client-${client.id}`, // Use existing room ID if available
-            clientId: client.id,
-            name: client.companyName || client.name || client.user?.name || 'Unknown Client',
-            avatar: client.user?.avatar || '/default-avatar.png',
-            lastMessage: client.lastMessage || '',
-            lastMessageDate: client.lastMessageDate || client.updatedAt || new Date().toISOString(),
-            unreadCount: client.unreadCount || 0,
-            status: 'none' as const,
-            isOnline: false,
-          }));
-
-          setContacts(clientContacts);
-          console.log('Transformed contacts:', clientContacts);
+            // Set pagination info
+            if (messagesResponse.data.pagination) {
+              setPagination({
+                nextCursor: messagesResponse.data.pagination.nextCursor,
+                hasMore: messagesResponse.data.pagination.hasMore,
+                isLoading: false,
+              });
+            }
+          }
         }
-      } catch (error: any) {
-        console.error('Error fetching clients:', error);
-        if (error.response) {
-          console.error('Error response:', error.response.data);
-        }
+      } catch (error) {
+        console.error('Error initializing chat room:', error);
       } finally {
         setIsLoading(false);
-        console.log('=== FETCH CLIENTS COMPLETE ===');
       }
     };
 
     if (isAuthenticated && user?.role === 'EMPLOYEE') {
-      fetchClients();
+      initializeChatRoom();
     }
   }, [isAuthenticated, user]);
 
-  // Handle contact selection - get or create chat room
-  const handleSelectContact = async (contact: Contact) => {
-    const extContact = contact as ExtendedContact;
-    console.log('=== SELECTING CONTACT ===', extContact);
-
-    // Instant switch: Update UI immediately
-    setSelectedContact(extContact);
-
-    // If this contact already has a valid room ID (not a client-* prefix), we're done
-    if (extContact.id && !extContact.id.startsWith('client-')) {
-      return;
-    }
-
-    // Otherwise, we need to get or create the chat room first
-    if (extContact.clientId) {
-      try {
-        console.log('Getting/creating chat room for client:', extContact.clientId);
-        setIsLoadingMessages(true);
-
-        const response = await api.post(`/chat/clients/${extContact.clientId}/room`);
-
-        if (response.data.success) {
-          const roomId = response.data.data.id;
-          console.log('Got room ID:', roomId);
-
-          // Update the contact with the real room ID
-          const updatedContact: ExtendedContact = {
-            ...extContact,
-            id: roomId,
-          };
-
-          // Update contacts list with real room ID
-          setContacts((prev) =>
-            prev.map((c) =>
-              c.clientId === extContact.clientId ? { ...c, id: roomId } : c
-            )
-          );
-
-          // Update selected contact with room ID
-          setSelectedContact(updatedContact);
-        }
-      } catch (error) {
-        console.error('Error getting/creating chat room:', error);
-        setIsLoadingMessages(false);
-      }
-    }
-  };
-
-  // Fetch messages when contact is selected (with caching for instant switching)
-  useEffect(() => {
-    const fetchMessages = async () => {
-      if (!selectedContact || selectedContact.id.startsWith('client-')) {
-        setMessages([]);
-        setIsLoadingMessages(false);
-        return;
-      }
-
-      const roomId = selectedContact.id;
-      const cache = messageCacheRef.current.get(roomId);
-      const CACHE_TTL = 30000; // 30 seconds cache validity
-
-      // Check cache first and load immediately if available
-      if (cache && cache.messages.length > 0) {
-        console.log('Loading cached messages for room:', roomId);
-        setMessages(cache.messages);
-        setPagination(cache.pagination);
-        setIsLoadingMessages(false);
-
-        // If cache is fresh enough, don't refetch
-        if (Date.now() - cache.lastFetched < CACHE_TTL) {
-          console.log('Cache is fresh, no refetch needed');
-          return;
-        }
-        // Cache exists but stale - refresh in background
-        console.log('Cache stale, refreshing in background...');
-      } else {
-        console.log('No cache found, fetching messages...');
-        setIsLoadingMessages(true);
-        setPagination({ nextCursor: null, hasMore: false, isLoading: false });
-      }
-
-      try {
-        const response = await api.get(`/chat/rooms/${roomId}/messages?limit=50`);
-
-        if (response.data.success) {
-          const newMessages = response.data.data.map((msg: ChatMessage) => ({
-            ...msg,
-            status: 'sent',
-          }));
-          const newPagination = {
-            nextCursor: response.data.pagination?.nextCursor || null,
-            hasMore: response.data.pagination?.hasMore || false,
-            isLoading: false,
-          };
-
-          // Update cache
-          messageCacheRef.current.set(roomId, {
-            messages: newMessages,
-            pagination: newPagination,
-            lastFetched: Date.now(),
-          });
-
-          // Only update state if this room is still selected
-          if (selectedContact?.id === roomId) {
-            setMessages(newMessages);
-            setPagination(newPagination);
-          }
-        }
-      } catch (error) {
-        console.error('Error fetching messages:', error);
-        if (!cache) {
-          setMessages([]);
-        }
-      } finally {
-        setIsLoadingMessages(false);
-      }
-    };
-
-    fetchMessages();
-  }, [selectedContact]);
-
   // Load more messages (pagination)
   const loadMoreMessages = useCallback(async () => {
-    if (!selectedContact || !pagination.nextCursor || pagination.isLoading) return;
-
-    const roomId = selectedContact.id;
+    if (!roomId || !pagination.nextCursor || pagination.isLoading) return;
 
     try {
-      setPagination((prev) => ({ ...prev, isLoading: true }));
+      setPagination(prev => ({ ...prev, isLoading: true }));
 
       const response = await api.get(
         `/chat/rooms/${roomId}/messages?cursor=${pagination.nextCursor}&limit=50`
       );
 
       if (response.data.success) {
-        const olderMessages = response.data.data.map((msg: ChatMessage) => ({
-          ...msg,
-          status: 'sent',
-        }));
-        const newPagination = {
+        // Prepend older messages to the beginning
+        setMessages(prev => [
+          ...response.data.data.map((msg: ChatMessage) => ({ ...msg, status: 'sent' })),
+          ...prev,
+        ]);
+
+        setPagination({
           nextCursor: response.data.pagination?.nextCursor || null,
           hasMore: response.data.pagination?.hasMore || false,
           isLoading: false,
-        };
-
-        // Update state
-        setMessages((prev) => [...olderMessages, ...prev]);
-        setPagination(newPagination);
-
-        // Update cache with all messages
-        const cache = messageCacheRef.current.get(roomId);
-        if (cache) {
-          messageCacheRef.current.set(roomId, {
-            messages: [...olderMessages, ...cache.messages],
-            pagination: newPagination,
-            lastFetched: Date.now(),
-          });
-        }
+        });
       }
     } catch (error) {
       console.error('Error loading more messages:', error);
-      setPagination((prev) => ({ ...prev, isLoading: false }));
+      setPagination(prev => ({ ...prev, isLoading: false }));
     }
-  }, [selectedContact, pagination.nextCursor, pagination.isLoading]);
-
-  // Update contact online status when online users change
-  useEffect(() => {
-    setContacts((prev) =>
-      prev.map((contact) => ({
-        ...contact,
-        isOnline: onlineUsers.includes(contact.id),
-      }))
-    );
-  }, [onlineUsers]);
+  }, [roomId, pagination.nextCursor, pagination.isLoading]);
 
   // Listen for new messages via Supabase Realtime
   useEffect(() => {
-    if (!selectedContact || !isConnected || selectedContact.id.startsWith('client-')) {
+    if (!roomId || !isConnected) {
       return;
     }
 
-    console.log('Setting up message listener for room:', selectedContact.id);
+    console.log('Setting up message listener for room:', roomId);
 
     const unsubscribe = onMessage((message: ChatMessage) => {
       console.log('New message received via Supabase:', message);
 
-      if (!selectedContact) {
-        return;
-      }
-
-      const roomId = selectedContact.id;
-      const newMessage: OptimisticMessage = { ...message, status: 'sent' };
-
       setMessages((prev) => {
         // Check if this is our optimistic message being confirmed
         const tempIndex = prev.findIndex(
-          (msg) =>
-            msg.tempId &&
-            msg.content === message.content &&
-            msg.senderId === message.senderId
+          (msg) => msg.tempId && msg.content === message.content && msg.senderId === message.senderId
         );
-
-        let updatedMessages: OptimisticMessage[];
 
         if (tempIndex !== -1) {
           // Replace optimistic message with real one
-          updatedMessages = [...prev];
-          updatedMessages[tempIndex] = newMessage;
-          console.log('Replaced optimistic message with real one');
-        } else if (prev.some((msg) => msg.id === message.id)) {
-          console.log('Message already exists, skipping');
+          const updated = [...prev];
+          updated[tempIndex] = { ...message, status: 'sent' };
+          return updated;
+        }
+
+        // Check if message already exists to avoid duplicates
+        if (prev.some((msg) => msg.id === message.id)) {
           return prev;
-        } else {
-          updatedMessages = [...prev, newMessage];
-          console.log('Added new message to list');
         }
 
-        // Update cache with new message
-        const cache = messageCacheRef.current.get(roomId);
-        if (cache) {
-          messageCacheRef.current.set(roomId, {
-            ...cache,
-            messages: updatedMessages,
-            lastFetched: Date.now(),
-          });
-        }
-
-        return updatedMessages;
+        return [...prev, { ...message, status: 'sent' }];
       });
-
-      // Update contact list to show latest message
-      setContacts((prev) =>
-        prev.map((contact) => {
-          if (contact.id === selectedContact?.id) {
-            return {
-              ...contact,
-              lastMessage: message.content,
-              lastMessageDate: message.timestamp,
-            };
-          }
-          return contact;
-        })
-      );
     });
 
     return unsubscribe;
-  }, [selectedContact, isConnected, onMessage]);
+  }, [roomId, isConnected, onMessage]);
 
   // Handle typing with debounce
   const handleTyping = useCallback(() => {
@@ -389,7 +190,7 @@ export default function EmployeeChatPage() {
 
   // Optimistic message sending - instant feedback
   const handleSendMessage = async (content: string) => {
-    if (!selectedContact || !user || selectedContact.id.startsWith('client-')) return;
+    if (!roomId || !user) return;
 
     // Generate temp ID for optimistic update
     const tempId = `temp-${Date.now()}`;
@@ -397,8 +198,8 @@ export default function EmployeeChatPage() {
       id: tempId,
       tempId,
       senderId: user.id,
-      senderName: user.name || 'Employee',
-      senderAvatar: '/imageofchat.png',
+      senderName: user.name || 'You',
+      senderAvatar: user.avatar || '/imageofchat.png',
       content,
       timestamp: new Date().toISOString(),
       isFromUser: true,
@@ -406,21 +207,7 @@ export default function EmployeeChatPage() {
     };
 
     // Immediately add message to UI (optimistic update)
-    setMessages((prev) => {
-      const updated = [...prev, optimisticMessage];
-
-      // Update cache with optimistic message
-      const cache = messageCacheRef.current.get(selectedContact.id);
-      if (cache) {
-        messageCacheRef.current.set(selectedContact.id, {
-          ...cache,
-          messages: updated,
-          lastFetched: Date.now(),
-        });
-      }
-
-      return updated;
-    });
+    setMessages((prev) => [...prev, optimisticMessage]);
 
     // Stop typing indicator
     sendTypingIndicator(false);
@@ -429,7 +216,7 @@ export default function EmployeeChatPage() {
     }
 
     try {
-      const response = await api.post(`/chat/rooms/${selectedContact.id}/messages`, {
+      const response = await api.post(`/chat/rooms/${roomId}/messages`, {
         content,
       });
 
@@ -437,20 +224,9 @@ export default function EmployeeChatPage() {
         // Update the optimistic message with real data
         setMessages((prev) =>
           prev.map((msg) =>
-            msg.tempId === tempId ? { ...response.data.data, status: 'sent' } : msg
-          )
-        );
-
-        // Update contact's last message
-        setContacts((prev) =>
-          prev.map((contact) =>
-            contact.id === selectedContact.id
-              ? {
-                  ...contact,
-                  lastMessage: content,
-                  lastMessageDate: new Date().toISOString(),
-                }
-              : contact
+            msg.tempId === tempId
+              ? { ...response.data.data, status: 'sent' }
+              : msg
           )
         );
       }
@@ -478,32 +254,26 @@ export default function EmployeeChatPage() {
           background: '#FFFFFF',
         }}
       >
-        {/* Contacts List */}
-        <ContactsList
-          contacts={contacts}
-          selectedContactId={selectedContact?.id}
-          onSelectContact={handleSelectContact}
-        />
-
-        {/* Chat Section */}
+        {/* Full width Chat Section with Admin */}
         <ChatSection
-          contact={selectedContact}
-          messages={isLoadingMessages ? [] : messages}
+          contact={adminContact}
+          messages={isLoading ? [] : messages}
           currentUserId={user?.id || 'employee'}
-          currentUserName={user?.name || 'Employee'}
-          currentUserAvatar={'/imageofchat.png'}
+          currentUserName={user?.name || 'You'}
+          currentUserAvatar={user?.avatar || '/imageofchat.png'}
           onSendMessage={handleSendMessage}
           onTyping={handleTyping}
           onLoadMore={loadMoreMessages}
           hasMoreMessages={pagination.hasMore}
           isLoadingMore={pagination.isLoading}
-          isLoadingMessages={isLoadingMessages}
+          isLoadingMessages={isLoading}
           isTyping={isTyping}
           typingUser={
-            isTyping && selectedContact
-              ? { name: selectedContact.name, avatar: selectedContact.avatar }
+            isTyping
+              ? { name: 'Admin Support', avatar: '/imageofchat.png' }
               : undefined
           }
+          showCreateTask={false}
         />
       </div>
     </DashboardLayout>
