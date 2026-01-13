@@ -8,6 +8,7 @@ import dataRoutes from './data.routes.js';
 import shippingMethodsRoutes from './shipping-methods.routes.js';
 import notificationsRoutes from './notifications.routes.js';
 import fulfillmentRoutes from './fulfillment.routes.js';
+import clientFulfillmentRoutes from './client-fulfillment.routes.js';
 import integrationsRoutes, {
   initializeIntegrations,
   startSyncScheduler,
@@ -49,6 +50,9 @@ router.use('/notifications', notificationsRoutes);
 
 // Fulfillment routes (JTL FFN integration)
 router.use('/fulfillment', fulfillmentRoutes);
+
+// Client Fulfillment routes (Client portal visibility)
+router.use('/client/fulfillment', clientFulfillmentRoutes);
 
 // Integrations routes (Shopify, WooCommerce, JTL)
 router.use('/integrations', integrationsRoutes);

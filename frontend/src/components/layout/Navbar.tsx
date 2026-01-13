@@ -14,6 +14,7 @@ const navItemsByRole: Record<UserRole, { key: string; href: string }[]> = {
   CLIENT: [
     { key: 'dashboard', href: '/client/dashboard' },
     { key: 'orders', href: '/client/orders' },
+    { key: 'fulfillment', href: '/client/fulfillment' },
     { key: 'products', href: '/client/products' },
     { key: 'inbounds', href: '/client/inbounds' },
     { key: 'returns', href: '/client/returns' },
