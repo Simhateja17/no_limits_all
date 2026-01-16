@@ -174,7 +174,7 @@ export const getClientFulfillmentStats = async (req: Request, res: Response): Pr
         where: {
           clientId,
           isCancelled: false,
-          fulfillmentState: { in: ['PROCESSING', 'PICKING', 'PACKING'] },
+          fulfillmentState: { in: ['READY_FOR_PICKING', 'PICKING', 'PICKED', 'PACKING', 'PACKED'] },
         },
       }),
       // On hold
@@ -218,7 +218,7 @@ export const getClientFulfillmentStats = async (req: Request, res: Response): Pr
         where: {
           clientId,
           shippedAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
-          orderDate: { not: null },
+          NOT: { orderDate: undefined },
         },
         select: { orderDate: true, shippedAt: true },
       }),
@@ -639,18 +639,18 @@ export const getInventoryAlerts = async (req: Request, res: Response): Promise<v
         clientId,
         isActive: true,
         OR: [
-          { availableQuantity: { lte: LOW_STOCK_THRESHOLD } },
-          { availableQuantity: { lt: 0 } }, // Oversold
+          { available: { lte: LOW_STOCK_THRESHOLD } },
+          { available: { lt: 0 } }, // Oversold
         ],
       },
       select: {
         id: true,
         sku: true,
         name: true,
-        availableQuantity: true,
-        reservedQuantity: true,
+        available: true,
+        reserved: true,
       },
-      orderBy: { availableQuantity: 'asc' },
+      orderBy: { available: 'asc' },
     });
 
     // Calculate daily sales rate for stockout prediction
@@ -675,14 +675,14 @@ export const getInventoryAlerts = async (req: Request, res: Response): Promise<v
         const dailySalesRate = totalSold / 30;
 
         let daysUntilStockout: number | null = null;
-        if (dailySalesRate > 0 && product.availableQuantity > 0) {
-          daysUntilStockout = Math.floor(product.availableQuantity / dailySalesRate);
+        if (dailySalesRate > 0 && product.available > 0) {
+          daysUntilStockout = Math.floor(product.available / dailySalesRate);
         }
 
         let alertType: 'LOW_STOCK' | 'OUT_OF_STOCK' | 'OVERSOLD';
-        if (product.availableQuantity < 0) {
+        if (product.available < 0) {
           alertType = 'OVERSOLD';
-        } else if (product.availableQuantity === 0) {
+        } else if (product.available === 0) {
           alertType = 'OUT_OF_STOCK';
         } else {
           alertType = 'LOW_STOCK';
@@ -692,8 +692,8 @@ export const getInventoryAlerts = async (req: Request, res: Response): Promise<v
           productId: product.id,
           sku: product.sku,
           productName: product.name || 'Unknown Product',
-          availableQuantity: product.availableQuantity,
-          reservedQuantity: product.reservedQuantity || 0,
+          availableQuantity: product.available,
+          reservedQuantity: product.reserved || 0,
           threshold: LOW_STOCK_THRESHOLD,
           alertType,
           daysUntilStockout,
@@ -846,7 +846,7 @@ export const getOrderPipeline = async (req: Request, res: Response): Promise<voi
     const [
       pending,
       awaitingStock,
-      processing,
+      readyForPicking,
       picking,
       packing,
       shipped,
@@ -855,7 +855,7 @@ export const getOrderPipeline = async (req: Request, res: Response): Promise<voi
     ] = await Promise.all([
       prisma.order.count({ where: { clientId, fulfillmentState: 'PENDING', isOnHold: false, isCancelled: false } }),
       prisma.order.count({ where: { clientId, fulfillmentState: 'AWAITING_STOCK', isOnHold: false, isCancelled: false } }),
-      prisma.order.count({ where: { clientId, fulfillmentState: 'PROCESSING', isCancelled: false } }),
+      prisma.order.count({ where: { clientId, fulfillmentState: 'READY_FOR_PICKING', isCancelled: false } }),
       prisma.order.count({ where: { clientId, fulfillmentState: 'PICKING', isCancelled: false } }),
       prisma.order.count({ where: { clientId, fulfillmentState: 'PACKING', isCancelled: false } }),
       prisma.order.count({ where: { clientId, fulfillmentState: 'SHIPPED', isCancelled: false } }),
@@ -866,7 +866,7 @@ export const getOrderPipeline = async (req: Request, res: Response): Promise<voi
     const pipeline = [
       { stage: 'Pending', count: pending, color: '#3B82F6' },
       { stage: 'Awaiting Stock', count: awaitingStock, color: '#F59E0B' },
-      { stage: 'Processing', count: processing, color: '#8B5CF6' },
+      { stage: 'Ready', count: readyForPicking, color: '#8B5CF6' },
       { stage: 'Picking', count: picking, color: '#EC4899' },
       { stage: 'Packing', count: packing, color: '#06B6D4' },
       { stage: 'Shipped', count: shipped, color: '#10B981' },
