@@ -530,18 +530,39 @@ export async function sendEmail(options: EmailOptions): Promise<EmailResult> {
       text = text || rendered.text;
     }
 
-    const result = await resendClient.emails.send({
+    // Build email payload - Resend v4 requires html to be defined (not undefined)
+    const emailPayload: {
+      from: string;
+      to: string[];
+      subject: string;
+      html?: string;
+      text?: string;
+      replyTo?: string;
+      attachments?: Array<{ filename: string; content: string | Buffer }>;
+    } = {
       from: options.from || DEFAULT_FROM,
       to: Array.isArray(options.to) ? options.to : [options.to],
       subject: options.subject,
-      html,
-      text,
-      replyTo: options.replyTo,
-      attachments: options.attachments?.map((a) => ({
+    };
+
+    // Only add html if it's defined
+    if (html) {
+      emailPayload.html = html;
+    }
+    if (text) {
+      emailPayload.text = text;
+    }
+    if (options.replyTo) {
+      emailPayload.replyTo = options.replyTo;
+    }
+    if (options.attachments?.length) {
+      emailPayload.attachments = options.attachments.map((a) => ({
         filename: a.filename,
         content: a.content,
-      })),
-    });
+      }));
+    }
+
+    const result = await resendClient.emails.send(emailPayload as Parameters<typeof resendClient.emails.send>[0]);
 
     logger.info('Email sent successfully', {
       to: options.to,

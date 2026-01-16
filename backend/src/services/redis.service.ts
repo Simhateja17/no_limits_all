@@ -4,11 +4,11 @@
  * Falls back gracefully to in-memory storage if Redis is unavailable
  */
 
-import Redis, { Redis as RedisClient } from 'ioredis';
+import { Redis } from 'ioredis';
 import { logger } from './logger.service.js';
 
 // Redis client instance
-let redisClient: RedisClient | null = null;
+let redisClient: Redis | null = null;
 let isConnected = false;
 
 // In-memory fallback cache
@@ -51,7 +51,7 @@ export async function initializeRedis(): Promise<boolean> {
   try {
     redisClient = new Redis(redisUrl, {
       maxRetriesPerRequest: 3,
-      retryStrategy: (times) => {
+      retryStrategy: (times: number) => {
         if (times > 3) {
           logger.error('Redis connection failed after 3 retries');
           return null; // Stop retrying
@@ -66,7 +66,7 @@ export async function initializeRedis(): Promise<boolean> {
       logger.info('Redis connected successfully');
     });
 
-    redisClient.on('error', (err) => {
+    redisClient.on('error', (err: Error) => {
       logger.error('Redis error:', { error: err.message });
       isConnected = false;
     });
@@ -87,7 +87,7 @@ export async function initializeRedis(): Promise<boolean> {
 /**
  * Get Redis client (for advanced operations)
  */
-export function getRedisClient(): RedisClient | null {
+export function getRedisClient(): Redis | null {
   return redisClient;
 }
 
@@ -377,7 +377,7 @@ export async function releaseLock(lockName: string): Promise<boolean> {
 
 type MessageHandler = (channel: string, message: string) => void;
 const subscribers = new Map<string, Set<MessageHandler>>();
-let subscriberClient: RedisClient | null = null;
+let subscriberClient: Redis | null = null;
 
 /**
  * Initialize pub/sub subscriber
@@ -389,7 +389,7 @@ async function initializeSubscriber(): Promise<void> {
     subscriberClient = redisClient.duplicate();
     await subscriberClient.connect();
 
-    subscriberClient.on('message', (channel, message) => {
+    subscriberClient.on('message', (channel: string, message: string) => {
       const handlers = subscribers.get(channel);
       if (handlers) {
         handlers.forEach((handler) => {

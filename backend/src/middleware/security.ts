@@ -55,8 +55,10 @@ let useRedis = false;
 // Initialize Redis if REDIS_URL is set
 if (process.env.REDIS_URL) {
   import('ioredis')
-    .then(({ default: Redis }) => {
-      redisClient = new Redis(process.env.REDIS_URL as string);
+    .then((module) => {
+      // ioredis exports the Redis class as both default and named export
+      const RedisClass = (module as any).Redis || (module as any).default;
+      redisClient = new RedisClass(process.env.REDIS_URL as string);
       redisClient.on('connect', () => {
         console.log('[Security] Redis rate limiter connected');
         useRedis = true;

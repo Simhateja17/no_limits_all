@@ -37,8 +37,8 @@ export function initializeSentry(app: Express): boolean {
       integrations: [
         // HTTP integration for tracing requests
         Sentry.httpIntegration(),
-        // Express integration
-        Sentry.expressIntegration({ app }),
+        // Express integration (Sentry SDK v8 doesn't require app argument)
+        Sentry.expressIntegration(),
       ],
 
       // Before send hook to filter sensitive data
@@ -99,43 +99,46 @@ export function isSentryInitialized(): boolean {
 /**
  * Sentry request handler middleware
  * Must be the first middleware
+ * Note: In Sentry SDK v8, request handling is automatic via expressIntegration
  */
 export function sentryRequestHandler(): (req: Request, res: Response, next: NextFunction) => void {
-  if (!isInitialized) {
-    return (_req, _res, next) => next();
-  }
-
-  return Sentry.Handlers.requestHandler();
+  // In Sentry SDK v8, request handling is automatic via expressIntegration
+  // This returns a no-op middleware for compatibility
+  return (_req: Request, _res: Response, next: NextFunction) => next();
 }
 
 /**
  * Sentry tracing middleware
  * Should be after request handler but before routes
+ * Note: In Sentry SDK v8, tracing is automatic via httpIntegration
  */
 export function sentryTracingHandler(): (req: Request, res: Response, next: NextFunction) => void {
-  if (!isInitialized) {
-    return (_req, _res, next) => next();
-  }
-
-  return Sentry.Handlers.tracingHandler();
+  // In Sentry SDK v8, tracing is automatic via httpIntegration
+  // This returns a no-op middleware for compatibility
+  return (_req: Request, _res: Response, next: NextFunction) => next();
 }
+
+// Error handler type
+type ErrorRequestHandler = (err: Error, req: Request, res: Response, next: NextFunction) => void;
 
 /**
  * Sentry error handler middleware
  * Must be before any other error handlers
  */
-export function sentryErrorHandler(): Sentry.Handlers.ErrorRequestHandler {
+export function sentryErrorHandler(): ErrorRequestHandler {
   if (!isInitialized) {
-    return ((_err, _req, _res, next) => next(_err)) as Sentry.Handlers.ErrorRequestHandler;
+    return (err: Error, _req: Request, _res: Response, next: NextFunction) => next(err);
   }
 
-  return Sentry.Handlers.errorHandler({
-    shouldHandleError(error) {
-      // Report all 4xx and 5xx errors
-      const status = (error as any).status || (error as any).statusCode || 500;
-      return status >= 400;
-    },
-  });
+  // In Sentry SDK v8, use setupExpressErrorHandler on the app instead
+  // This provides a fallback handler that captures exceptions
+  return (err: Error, _req: Request, _res: Response, next: NextFunction) => {
+    const status = (err as any).status || (err as any).statusCode || 500;
+    if (status >= 400) {
+      Sentry.captureException(err);
+    }
+    next(err);
+  };
 }
 
 /**
