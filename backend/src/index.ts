@@ -3,17 +3,43 @@ import cors, { CorsOptions } from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
+import compression from 'compression';
 import { createServer } from 'http';
 import { env, prisma } from './config/index.js';
-import routes, { 
-  initializeIntegrations, 
-  initializeEnhancedSync, 
+import routes, {
+  initializeIntegrations,
+  initializeEnhancedSync,
   startEnhancedSyncProcessors,
   stopEnhancedSyncProcessors
 } from './routes/index.js';
 import { initializeSocket } from './services/socket.js';
+import { enforceSecurityConfig } from './config/security-validator.js';
+import {
+  apiLimiter,
+  securityHeaders,
+  sanitizeBody,
+  validatePagination,
+  blockSuspiciousRequests,
+  getCsrfToken,
+} from './middleware/security.js';
+
+// Production services
+import { logger, requestLogger, errorLogger } from './services/logger.service.js';
+import { initializeRedis, shutdownRedis, getCacheStats } from './services/redis.service.js';
+import { initializeSentry, sentryRequestHandler, sentryTracingHandler, sentryErrorHandler, sentryUserMiddleware, flushSentry } from './services/sentry.service.js';
+import { metricsMiddleware, metricsHandler, healthCheckHandler, readinessHandler, livenessHandler } from './services/metrics.service.js';
+import { initializeEmail } from './services/email.service.js';
+import { setupSwagger } from './config/swagger.js';
+
+// Run security configuration check on startup
+enforceSecurityConfig();
 
 const app = express();
+
+// Initialize Sentry (must be first)
+initializeSentry(app);
+app.use(sentryRequestHandler());
+app.use(sentryTracingHandler());
 
 // CORS configuration - Allow multiple origins
 const allowedOrigins = env.frontendUrl.split(',').map(url => url.trim());
@@ -37,16 +63,55 @@ const corsOptions: CorsOptions = {
 app.use(helmet());
 app.use(cors(corsOptions));
 
-// Debug logging for CORS
-app.use((req, res, next) => {
-  console.log(`${req.method} ${req.path} - Origin: ${req.headers.origin || 'no-origin'}`);
-  next();
-});
+// Compression middleware
+app.use(compression({
+  level: 6, // Balance between compression and speed
+  threshold: 1024, // Only compress responses > 1KB
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) return false;
+    return compression.filter(req, res);
+  },
+}));
 
-app.use(morgan('dev'));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Security middleware
+app.use(securityHeaders);
+app.use(apiLimiter);
+
+// Prometheus metrics middleware
+app.use(metricsMiddleware);
+
+// Structured logging
+app.use(requestLogger);
+
+// Legacy Morgan for backward compatibility (development only)
+if (env.nodeEnv !== 'production') {
+  app.use(morgan('dev'));
+}
+
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
+
+// Input validation and sanitization
+app.use(sanitizeBody);
+app.use(validatePagination);
+app.use(blockSuspiciousRequests);
+
+// Sentry user context middleware (after auth)
+app.use(sentryUserMiddleware);
+
+// Setup Swagger documentation
+setupSwagger(app);
+logger.info('📚 API documentation available at /api/docs');
+
+// Health check endpoints (before auth)
+app.get('/api/health', healthCheckHandler);
+app.get('/api/health/ready', readinessHandler);
+app.get('/api/health/live', livenessHandler);
+app.get('/api/metrics', metricsHandler);
+
+// CSRF token endpoint
+app.get('/api/csrf-token', getCsrfToken);
 
 // Initialize integrations with prisma client
 initializeIntegrations(prisma);
@@ -92,13 +157,35 @@ app.get('/', (_req: Request, res: Response) => {
   });
 });
 
+// Sentry error handler (must be before custom error handler)
+app.use(sentryErrorHandler());
+
+// Winston error logger
+app.use(errorLogger);
+
 // Error handling middleware
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-  console.error('Error:', err);
-  console.error('Stack:', err.stack);
-  res.status(err.status || 500).json({
-    error: err.message || 'Internal server error',
+  // Log full error details server-side
+  logger.error('Request error', {
+    message: err.message,
+    statusCode: err.status || 500,
+    stack: env.nodeEnv !== 'production' ? err.stack : undefined,
   });
+
+  // Return sanitized error to client
+  const statusCode = err.status || 500;
+  const response: { error: string; details?: string } = {
+    error: statusCode === 500
+      ? 'Internal server error'  // Don't expose internal error messages
+      : err.message || 'An error occurred',
+  };
+
+  // Only include details in development
+  if (env.nodeEnv !== 'production' && err.details) {
+    response.details = err.details;
+  }
+
+  res.status(statusCode).json(response);
 });
 
 // Create HTTP server
@@ -113,52 +200,86 @@ const PORT = Number(env.port);
 const HOST = process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost';
 
 httpServer.listen(PORT, HOST, async () => {
-  console.log(`\n🚀 Server running on ${HOST}:${PORT} in ${env.nodeEnv} mode`);
-  console.log(`📍 FRONTEND_URL: ${env.frontendUrl}`);
-  console.log(`💾 DATABASE_URL configured: ${env.databaseUrl ? 'YES' : 'NO'}`);
-  console.log(`🔌 Socket.IO ready for connections`);
+  logger.info(`Server running on port ${PORT} in ${env.nodeEnv} mode`);
+
+  if (env.nodeEnv !== 'production') {
+    logger.info(`FRONTEND_URL: ${env.frontendUrl}`);
+    logger.info(`DATABASE_URL configured: ${env.databaseUrl ? 'YES' : 'NO'}`);
+  }
+
+  // Initialize Redis for caching
+  const redisConnected = await initializeRedis();
+  if (redisConnected) {
+    logger.info('Redis connected - using distributed caching');
+  } else {
+    logger.warn('Redis not connected - using in-memory cache');
+  }
+
+  // Initialize email service
+  const emailInitialized = initializeEmail();
+  if (emailInitialized) {
+    logger.info('Email service initialized');
+  } else {
+    logger.warn('Email service not configured');
+  }
+
+  logger.info('Socket.IO ready for connections');
 
   // Initialize background job queue
   await initQueue();
 
   // Start enhanced sync background processors
   startEnhancedSyncProcessors();
-  console.log('🔄 Enhanced sync processors started:');
-  console.log('   - Sync Queue Processor (batch size: 10, interval: 5s)');
-  console.log('   - JTL Polling Service (interval: 2min)');
+  logger.info('Enhanced sync processors started');
+  logger.info('   - Sync Queue Processor (batch size: 10, interval: 5s)');
+  logger.info('   - JTL Polling Service (interval: 2min)');
   if (queueInitialized) {
-    console.log('   - Background Job Queue (PostgreSQL-based)');
+    logger.info('   - Background Job Queue (PostgreSQL-based)');
   }
-  console.log('\n✨ All systems operational!\n');
+
+  // Log cache stats
+  const cacheStats = await getCacheStats();
+  logger.info(`Cache type: ${cacheStats.type}, Connected: ${cacheStats.connected}`);
+
+  logger.info('All systems operational!');
+  logger.info(`API Documentation: http://${HOST}:${PORT}/api/docs`);
 });
 
 // Graceful shutdown
 const shutdown = async () => {
-  console.log('\n🛑 Shutting down gracefully...');
+  logger.info('Shutting down gracefully...');
+
+  // Flush Sentry events
+  await flushSentry();
+  logger.info('Sentry events flushed');
 
   // Stop background job queue
   if (queueInitialized) {
     await shutdownQueue();
-    console.log('✅ Background queue stopped');
+    logger.info('Background queue stopped');
   }
 
   // Stop sync processors
   stopEnhancedSyncProcessors();
-  console.log('✅ Sync processors stopped');
+  logger.info('Sync processors stopped');
+
+  // Close Redis connection
+  await shutdownRedis();
+  logger.info('Redis connection closed');
 
   // Close database connection
   await prisma.$disconnect();
-  console.log('✅ Database connection closed');
+  logger.info('Database connection closed');
 
   // Close HTTP server
   httpServer.close(() => {
-    console.log('✅ HTTP server closed');
+    logger.info('HTTP server closed');
     process.exit(0);
   });
 
   // Force close after 10 seconds
   setTimeout(() => {
-    console.error('⚠️ Forced shutdown after timeout');
+    logger.error('Forced shutdown after timeout');
     process.exit(1);
   }, 10000);
 };

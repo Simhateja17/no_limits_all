@@ -121,12 +121,12 @@ export const getDashboardStats = async (req: Request, res: Response): Promise<vo
           isOnHold: false,
         },
       }),
-      // In progress (PROCESSING, PICKING, PACKING)
+      // In progress (READY_FOR_PICKING, PICKING, PICKED, PACKING, PACKED)
       prisma.order.count({
         where: {
           ...clientFilter,
           isCancelled: false,
-          fulfillmentState: { in: ['PROCESSING', 'PICKING', 'PACKING'] },
+          fulfillmentState: { in: ['READY_FOR_PICKING', 'PICKING', 'PICKED', 'PACKING', 'PACKED'] },
         },
       }),
       // On hold
@@ -169,7 +169,7 @@ export const getDashboardStats = async (req: Request, res: Response): Promise<vo
           shippedAt: {
             gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
           },
-          orderDate: { not: null },
+          NOT: { orderDate: undefined },
         },
         select: {
           orderDate: true,
@@ -251,7 +251,7 @@ export const getFulfillmentOrders = async (req: Request, res: Response): Promise
           where.isOnHold = false;
           break;
         case 'IN_PROGRESS':
-          where.fulfillmentState = { in: ['PROCESSING', 'PICKING', 'PACKING'] };
+          where.fulfillmentState = { in: ['READY_FOR_PICKING', 'PICKING', 'PICKED', 'PACKING', 'PACKED'] };
           break;
         case 'ON_HOLD':
           where.isOnHold = true;

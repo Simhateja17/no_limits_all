@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { FulfillmentWorkflowWizard } from '@/components/fulfillment';
 import { fulfillmentApi, FulfillmentOrder } from '@/lib/fulfillment-api';
-import { ArrowLeft, Package, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Package, AlertCircle, RefreshCw } from 'lucide-react';
 
 function WorkflowContent() {
   const router = useRouter();
@@ -16,119 +16,38 @@ function WorkflowContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchOrder = async () => {
+  const fetchOrder = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
       if (!orderId) {
         // If no orderId, try to get the next order in queue
-        try {
-          setLoading(true);
-          const result = await fulfillmentApi.getFulfillmentOrders({ status: 'OPEN', limit: 1 });
-          if (result.orders.length > 0) {
-            setOrder(result.orders[0]);
-          } else {
-            setError('No orders available for fulfillment');
-          }
-        } catch (err) {
-          console.error('Error fetching next order:', err);
-          // Generate mock order for demo
-          setOrder(generateMockOrder('demo-1'));
-        } finally {
-          setLoading(false);
+        const result = await fulfillmentApi.getFulfillmentOrders({ status: 'OPEN', limit: 1 });
+        if (result.orders && result.orders.length > 0) {
+          setOrder(result.orders[0]);
+        } else {
+          setError('No orders available for fulfillment. All pending orders have been processed.');
+          setOrder(null);
         }
-        return;
-      }
-
-      try {
-        setLoading(true);
+      } else {
+        // Fetch specific order
         const data = await fulfillmentApi.getFulfillmentOrder(orderId);
         setOrder(data);
-      } catch (err) {
-        console.error('Error fetching order:', err);
-        // Generate mock order for demo
-        setOrder(generateMockOrder(orderId));
-      } finally {
-        setLoading(false);
       }
-    };
+    } catch (err: any) {
+      console.error('Error fetching order:', err);
+      const errorMessage = err?.response?.data?.error || err?.message || 'Failed to load order';
+      setError(`${errorMessage}. Please check your connection and try again.`);
+      setOrder(null);
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  useEffect(() => {
     fetchOrder();
   }, [orderId]);
-
-  const generateMockOrder = (id: string): FulfillmentOrder => ({
-    id,
-    orderId: `ORD-${id}`,
-    orderNumber: `#${1000 + Math.floor(Math.random() * 1000)}`,
-    externalOrderId: `EXT-${id}`,
-    shopifyFulfillmentOrderId: `gid://shopify/FulfillmentOrder/${id}`,
-    status: 'OPEN',
-    requestStatus: 'ACCEPTED',
-    holdReason: null,
-    holdNotes: null,
-    assignedLocationId: 'loc-1',
-    assignedLocationName: 'Main Warehouse - Berlin',
-    customerName: 'John Doe',
-    customerEmail: 'john.doe@example.com',
-    shippingAddress: {
-      firstName: 'John',
-      lastName: 'Doe',
-      company: 'Acme Corp',
-      address1: '123 Main Street',
-      address2: 'Apt 4B',
-      city: 'Berlin',
-      zip: '10115',
-      country: 'Germany',
-      countryCode: 'DE',
-    },
-    lineItems: [
-      {
-        id: 'item-1',
-        productId: 'prod-1',
-        variantId: 'var-1',
-        sku: 'WIDGET-PRO-001',
-        productName: 'Premium Widget Pro',
-        quantity: 2,
-        fulfilledQuantity: 0,
-        remainingQuantity: 2,
-        requiresShipping: true,
-      },
-      {
-        id: 'item-2',
-        productId: 'prod-2',
-        variantId: 'var-2',
-        sku: 'GADGET-STD-002',
-        productName: 'Standard Gadget',
-        quantity: 1,
-        fulfilledQuantity: 0,
-        remainingQuantity: 1,
-        requiresShipping: true,
-      },
-      {
-        id: 'item-3',
-        productId: 'prod-3',
-        variantId: 'var-3',
-        sku: 'ACC-BASIC-003',
-        productName: 'Basic Accessory Pack',
-        quantity: 3,
-        fulfilledQuantity: 0,
-        remainingQuantity: 3,
-        requiresShipping: true,
-      },
-    ],
-    trackingInfo: null,
-    client: {
-      id: 'client-1',
-      companyName: 'Acme Store',
-      name: 'Acme Store',
-    },
-    channel: {
-      id: 'channel-1',
-      name: 'Shopify Store',
-      type: 'SHOPIFY',
-    },
-    createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    updatedAt: new Date().toISOString(),
-    fulfillAt: null,
-  });
 
   const handleComplete = () => {
     router.push('/admin/fulfillment');
@@ -189,27 +108,49 @@ function WorkflowContent() {
             marginBottom: '8px',
           }}
         >
-          {error || 'Order not found'}
+          {error ? 'Unable to Load Order' : 'Order Not Found'}
         </h2>
-        <p style={{ color: '#6B7280', fontFamily: 'Inter, sans-serif', fontSize: '14px', marginBottom: '24px' }}>
-          {error ? 'Please check back later or select an order from the queue.' : 'The requested order could not be loaded.'}
+        <p style={{ color: '#6B7280', fontFamily: 'Inter, sans-serif', fontSize: '14px', marginBottom: '24px', maxWidth: '400px', margin: '0 auto 24px' }}>
+          {error || 'The requested order could not be found. It may have been fulfilled or cancelled.'}
         </p>
-        <button
-          onClick={() => router.push('/admin/fulfillment')}
-          style={{
-            padding: '10px 20px',
-            borderRadius: '8px',
-            backgroundColor: '#003450',
-            color: '#FFFFFF',
-            fontFamily: 'Inter, sans-serif',
-            fontSize: '14px',
-            fontWeight: 500,
-            border: 'none',
-            cursor: 'pointer',
-          }}
-        >
-          Back to Fulfillment
-        </button>
+        <div className="flex items-center justify-center gap-3">
+          <button
+            onClick={fetchOrder}
+            style={{
+              padding: '10px 20px',
+              borderRadius: '8px',
+              backgroundColor: '#F3F4F6',
+              color: '#374151',
+              fontFamily: 'Inter, sans-serif',
+              fontSize: '14px',
+              fontWeight: 500,
+              border: '1px solid #E5E7EB',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+            }}
+          >
+            <RefreshCw size={16} />
+            Retry
+          </button>
+          <button
+            onClick={() => router.push('/admin/fulfillment')}
+            style={{
+              padding: '10px 20px',
+              borderRadius: '8px',
+              backgroundColor: '#003450',
+              color: '#FFFFFF',
+              fontFamily: 'Inter, sans-serif',
+              fontSize: '14px',
+              fontWeight: 500,
+              border: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            Back to Fulfillment
+          </button>
+        </div>
       </div>
     );
   }

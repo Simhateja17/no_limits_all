@@ -12,8 +12,25 @@ async function main() {
   console.log('🌱 Seeding database...\n');
 
   try {
+    // Get password from environment variable or generate secure default for development
+    const seedPassword = process.env.SEED_PASSWORD;
+
+    if (!seedPassword && process.env.NODE_ENV === 'production') {
+      console.error('❌ SEED_PASSWORD environment variable is required in production!');
+      console.error('   Set SEED_PASSWORD to a secure value before running seed.');
+      process.exit(1);
+    }
+
+    // Use env variable or secure default for development only
+    const rawPassword = seedPassword || 'ChangeMeImmediately!' + Math.random().toString(36).slice(2);
+    if (!seedPassword) {
+      console.warn('⚠️  WARNING: Using auto-generated password for development.');
+      console.warn(`   Generated password: ${rawPassword}`);
+      console.warn('   Change this password immediately after login!\n');
+    }
+
     // Hash password for all users
-    const password = await bcrypt.hash('password123', 10);
+    const password = await bcrypt.hash(rawPassword, 12);
 
     // Create Super Admin
     const superAdmin = await prisma.user.upsert({

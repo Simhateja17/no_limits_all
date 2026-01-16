@@ -7,6 +7,11 @@ import {
   verifyRefreshToken,
 } from '../utils/auth.js';
 import { UserRole } from '@prisma/client';
+import {
+  requestPasswordReset,
+  verifyResetToken,
+  resetPassword as resetPasswordService,
+} from '../services/password-reset.service.js';
 
 // Register new user
 export const register = async (req: Request, res: Response): Promise<void> => {
@@ -402,5 +407,98 @@ export const changePassword = async (
     res.json({ message: 'Password changed successfully' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to change password' });
+  }
+};
+
+// Request password reset (forgot password)
+export const forgotPassword = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      res.status(400).json({ error: 'Email is required' });
+      return;
+    }
+
+    const result = await requestPasswordReset(email.toLowerCase());
+
+    // In production, you would send an email here with the reset link
+    // For now, we return a success message (token is logged server-side)
+    if (result.token && process.env.NODE_ENV !== 'production') {
+      // Only include token in response for development/testing
+      console.log(`[Auth] Password reset token for ${email}: ${result.token}`);
+      console.log(`[Auth] Reset URL: ${process.env.FRONTEND_URL}/reset-password?token=${result.token}`);
+    }
+
+    // Always return same response to prevent email enumeration
+    res.json({
+      message: 'If an account exists with this email, a password reset link will be sent.',
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to process password reset request' });
+  }
+};
+
+// Verify reset token
+export const verifyPasswordResetToken = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { token } = req.query;
+
+    if (!token || typeof token !== 'string') {
+      res.status(400).json({ error: 'Reset token is required' });
+      return;
+    }
+
+    const verification = verifyResetToken(token);
+
+    if (!verification.valid) {
+      res.status(400).json({ error: verification.error });
+      return;
+    }
+
+    res.json({
+      valid: true,
+      message: 'Token is valid. You may reset your password.',
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to verify reset token' });
+  }
+};
+
+// Reset password with token
+export const resetPassword = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { token, newPassword } = req.body;
+
+    if (!token || !newPassword) {
+      res.status(400).json({ error: 'Token and new password are required' });
+      return;
+    }
+
+    // Validate password strength
+    if (newPassword.length < 8) {
+      res.status(400).json({ error: 'Password must be at least 8 characters long' });
+      return;
+    }
+
+    const result = await resetPasswordService(token, newPassword);
+
+    if (!result.success) {
+      res.status(400).json({ error: result.message });
+      return;
+    }
+
+    res.json({ message: result.message });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to reset password' });
   }
 };

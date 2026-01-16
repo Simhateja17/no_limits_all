@@ -166,14 +166,19 @@ Authorization: Bearer <accessToken>
 
 After running `npm run prisma:seed`, you can use these test accounts:
 
+> **SECURITY WARNING**: Default seed passwords are for development only.
+> For production, set `SEED_PASSWORD` environment variable or update passwords immediately after seeding.
+
 | Role | Email | Password |
 |------|-------|----------|
-| Super Admin | superadmin@nolimits.com | password123 |
-| Admin | admin@nolimits.com | password123 |
-| Employee | employee@nolimits.com | password123 |
-| Client 1 | papercrush@example.com | password123 |
-| CliLogin** with existing credentials to get an access token (only Super Admin can register new users)
-| Client 3 | terppens@example.com | password123 |
+| Super Admin | superadmin@nolimits.com | Set via SEED_PASSWORD env var |
+| Admin | admin@nolimits.com | Set via SEED_PASSWORD env var |
+| Employee | employee@nolimits.com | Set via SEED_PASSWORD env var |
+| Client 1 | papercrush@example.com | Set via SEED_PASSWORD env var |
+| Client 2 | caobali@example.com | Set via SEED_PASSWORD env var |
+| Client 3 | terppens@example.com | Set via SEED_PASSWORD env var |
+
+**Development default**: If SEED_PASSWORD is not set, check the seed script for the default value.
 
 ## Authentication Flow
 

@@ -357,7 +357,7 @@ export class FulfillmentSyncService {
           if (!jtlService) continue;
 
           // Get last poll time for this client
-          const lastPoll = client.jtlConfig?.lastPollAt || new Date(Date.now() - 24 * 60 * 60 * 1000);
+          const lastPoll = client.jtlConfig?.lastSyncAt || new Date(Date.now() - 24 * 60 * 60 * 1000);
           const since = lastPoll.toISOString();
 
           // Poll for updates
@@ -393,7 +393,7 @@ export class FulfillmentSyncService {
           if (client.jtlConfig) {
             await this.prisma.jtlConfig.update({
               where: { id: client.jtlConfig.id },
-              data: { lastPollAt: new Date() },
+              data: { lastSyncAt: new Date() },
             });
           }
         } catch (error: any) {
