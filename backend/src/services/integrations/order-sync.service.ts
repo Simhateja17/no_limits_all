@@ -28,6 +28,20 @@ import { WooCommerceService } from './woocommerce.service.js';
 import { JTLService } from './jtl.service.js';
 import ShippingMethodService from '../shipping-method.service.js';
 import { notificationService } from '../notification.service.js';
+
+/**
+ * Test mode detection constants
+ * Orders with these tags or email patterns are stress test orders
+ * and should NOT sync to the real JTL-FFN warehouse
+ */
+const STRESS_TEST_TAGS = ['stress-test', 'k6', 'test-mode', 'load-test'];
+const STRESS_TEST_EMAIL_PATTERNS = [
+  '@test.com',
+  '@test-medium.com',
+  '@blackfriday-test.com',
+  '@stress-test.io',
+  '@load-test.net',
+];
 import crypto from 'crypto';
 
 type Decimal = Prisma.Decimal;
@@ -781,16 +795,82 @@ export class OrderSyncService {
   }
 
   /**
+   * Check if an order is a stress test order (should not sync to real FFN)
+   */
+  private isStressTestOrder(order: { tags?: string[] | null; customerEmail?: string | null }): boolean {
+    // Check for stress test tags
+    if (order.tags && Array.isArray(order.tags)) {
+      const hasTestTag = order.tags.some(tag => 
+        STRESS_TEST_TAGS.some(testTag => tag.toLowerCase().includes(testTag))
+      );
+      if (hasTestTag) return true;
+    }
+
+    // Check for stress test email patterns
+    if (order.customerEmail) {
+      const hasTestEmail = STRESS_TEST_EMAIL_PATTERNS.some(pattern =>
+        order.customerEmail!.toLowerCase().includes(pattern.toLowerCase())
+      );
+      if (hasTestEmail) return true;
+    }
+
+    return false;
+  }
+
+  /**
    * Queue sync to JTL-FFN
+   * 
+   * NOTE: Stress test orders (identified by tags or email patterns) are
+   * automatically skipped to prevent test data from reaching the real warehouse.
+   * 
+   * Set STRESS_TEST_SYNC_TO_FFN=true to force sync even for test orders (for full E2E testing)
    */
   private async queueFfnSync(orderId: string, origin: string, eventId?: string): Promise<void> {
+    console.log(`[OrderSync] ========== queueFfnSync called ==========`);
+    console.log(`[OrderSync] Order ${orderId} from ${origin} - preparing FFN sync queue`);
+    
     try {
+      // Check if we should bypass test mode detection (for full E2E stress testing)
+      const forceSync = process.env.STRESS_TEST_SYNC_TO_FFN === 'true';
+      console.log(`[OrderSync] STRESS_TEST_SYNC_TO_FFN env: ${forceSync ? 'ENABLED (force sync)' : 'DISABLED (normal mode)'}`);
+      
+      if (!forceSync) {
+        // First, check if this is a stress test order
+        const order = await this.prisma.order.findUnique({
+          where: { id: orderId },
+          select: { tags: true, customerEmail: true, orderNumber: true },
+        });
+
+        if (order && this.isStressTestOrder(order)) {
+          console.log(`[OrderSync] ========== TEST ORDER DETECTED ==========`);
+          console.log(`[OrderSync] Order ${orderId} (${order.orderNumber}) identified as stress test order`);
+          console.log(`[OrderSync] Email: ${order.customerEmail}, Tags: ${order.tags?.join(', ')}`);
+          console.log(`[OrderSync] SKIPPING FFN sync - test mode protection active`);
+          
+          // Update sync status to indicate test mode skip
+          await this.prisma.order.update({
+            where: { id: orderId },
+            data: {
+              syncStatus: 'SKIPPED',
+              ffnSyncError: 'Stress test order - FFN sync disabled',
+            },
+          });
+          console.log(`[OrderSync] Order ${orderId} marked as SKIPPED`);
+          return;
+        }
+      } else {
+        console.log(`[OrderSync] ========== FORCE SYNC MODE ==========`);
+        console.log(`[OrderSync] STRESS_TEST_SYNC_TO_FFN=true - bypassing test mode detection`);
+        console.log(`[OrderSync] Order ${orderId} WILL sync to JTL-FFN`);
+      }
+
       // Import queue service dynamically to avoid circular dependencies
       const { getQueue, QUEUE_NAMES } = await import('../queue/sync-queue.service.js');
 
       const queue = getQueue();
 
       // Enqueue the job
+      console.log(`[OrderSync] Enqueueing FFN sync job for order ${orderId}...`);
       await queue.enqueue(
         QUEUE_NAMES.ORDER_SYNC_TO_FFN,
         {
@@ -806,7 +886,8 @@ export class OrderSyncService {
         }
       );
 
-      console.log(`[OrderSync] Queued FFN sync for order ${orderId}`);
+      console.log(`[OrderSync] ========== JOB ENQUEUED ==========`);
+      console.log(`[OrderSync] Order ${orderId} queued for FFN sync (queue: ${QUEUE_NAMES.ORDER_SYNC_TO_FFN})`);
 
       // Update sync status to pending
       await this.prisma.order.update({
@@ -815,8 +896,10 @@ export class OrderSyncService {
           syncStatus: 'PENDING',
         },
       });
+      console.log(`[OrderSync] Order ${orderId} sync status set to PENDING`);
     } catch (error: any) {
-      console.error(`[OrderSync] Failed to queue FFN sync:`, error);
+      console.error(`[OrderSync] ========== QUEUE FAILED ==========`);
+      console.error(`[OrderSync] Failed to queue FFN sync for ${orderId}:`, error.message);
 
       // Fallback to direct sync if queue is not available
       if (this.jtlService) {

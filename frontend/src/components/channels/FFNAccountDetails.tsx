@@ -113,6 +113,18 @@ export function FFNAccountDetails() {
   const [reauthenticating, setReauthenticating] = useState(false);
   const [reauthResult, setReauthResult] = useState<{ success: boolean; message: string } | null>(null);
 
+  // Reconfigure modal state
+  const [showReconfigureModal, setShowReconfigureModal] = useState(false);
+  const [reconfiguring, setReconfiguring] = useState(false);
+  const [reconfigureError, setReconfigureError] = useState<string | null>(null);
+  const [reconfigureForm, setReconfigureForm] = useState({
+    jtlClientId: '',
+    jtlClientSecret: '',
+    fulfillerId: '',
+    warehouseId: '',
+    environment: 'sandbox' as 'sandbox' | 'production',
+  });
+
   useEffect(() => {
     fetchJTLStatus();
     fetchShippingMethods();
@@ -205,6 +217,141 @@ export function FFNAccountDetails() {
 
   const handleConfigure = () => {
     router.push('/client/setup?step=jtl');
+  };
+
+  const handleOpenReconfigureModal = () => {
+    // Pre-populate with current values
+    setReconfigureForm({
+      jtlClientId: '',
+      jtlClientSecret: '',
+      fulfillerId: status?.fulfillerId || '',
+      warehouseId: status?.warehouseId || '',
+      environment: (status?.environment as 'sandbox' | 'production') || 'sandbox',
+    });
+    setReconfigureError(null);
+    setShowReconfigureModal(true);
+  };
+
+  const handleCloseReconfigureModal = () => {
+    setShowReconfigureModal(false);
+    setReconfigureError(null);
+    setReconfiguring(false);
+  };
+
+  const handleReconfigure = async () => {
+    if (!user?.clientId) return;
+
+    // Validate required fields
+    if (!reconfigureForm.jtlClientId.trim()) {
+      setReconfigureError(t('reconfigureClientIdRequired'));
+      return;
+    }
+    if (!reconfigureForm.jtlClientSecret.trim()) {
+      setReconfigureError(t('reconfigureClientSecretRequired'));
+      return;
+    }
+    if (!reconfigureForm.fulfillerId.trim()) {
+      setReconfigureError(t('reconfigureFulfillerIdRequired'));
+      return;
+    }
+    if (!reconfigureForm.warehouseId.trim()) {
+      setReconfigureError(t('reconfigureWarehouseIdRequired'));
+      return;
+    }
+
+    setReconfiguring(true);
+    setReconfigureError(null);
+
+    let oauthCompleted = false;
+
+    try {
+      // Save new JTL credentials
+      const result = await onboardingApi.setupJTLCredentials({
+        clientId: user.clientId,
+        jtlClientId: reconfigureForm.jtlClientId.trim(),
+        jtlClientSecret: reconfigureForm.jtlClientSecret.trim(),
+        fulfillerId: reconfigureForm.fulfillerId.trim(),
+        warehouseId: reconfigureForm.warehouseId.trim(),
+        environment: reconfigureForm.environment,
+      });
+
+      if (!result.success) {
+        setReconfigureError(result.error || t('reconfigureFailed'));
+        setReconfiguring(false);
+        return;
+      }
+
+      // Trigger OAuth flow
+      const redirectUri = `${window.location.origin}/integrations/jtl/callback`;
+      const authUrlResponse = await onboardingApi.getJTLAuthUrl(
+        user.clientId,
+        redirectUri,
+        reconfigureForm.environment
+      );
+
+      // Open popup with the auth URL
+      const popup = window.open(
+        authUrlResponse.authUrl,
+        'jtl-oauth',
+        'width=500,height=700'
+      );
+
+      if (!popup) {
+        setReconfigureError(t('popupBlocked'));
+        setReconfiguring(false);
+        return;
+      }
+
+      // Listen for messages from popup
+      const handleMessage = async (event: MessageEvent) => {
+        if (event.origin !== window.location.origin) return;
+
+        if (event.data.type === 'jtl-oauth-success') {
+          oauthCompleted = true;
+          window.removeEventListener('message', handleMessage);
+
+          // Close modal and show success
+          setShowReconfigureModal(false);
+          setReconfiguring(false);
+
+          setReauthResult({
+            success: true,
+            message: t('reconfigureSuccess'),
+          });
+
+          // Refresh the status
+          await fetchJTLStatus();
+
+          // Automatically sync shipping methods
+          await handleSyncShippingMethods();
+        } else if (event.data.type === 'jtl-oauth-error') {
+          oauthCompleted = true;
+          window.removeEventListener('message', handleMessage);
+
+          setReconfigureError(event.data.error || t('reconfigureFailed'));
+          setReconfiguring(false);
+        }
+      };
+
+      window.addEventListener('message', handleMessage);
+
+      // Check if popup is closed without completing
+      const checkClosed = setInterval(() => {
+        if (popup.closed) {
+          clearInterval(checkClosed);
+          window.removeEventListener('message', handleMessage);
+
+          if (!oauthCompleted) {
+            setReconfigureError(t('reauthCancelled'));
+            setReconfiguring(false);
+          }
+        }
+      }, 1000);
+    } catch (err) {
+      console.error('Failed to reconfigure JTL:', err);
+      setReconfigureError(t('reconfigureFailed'));
+      setReconfiguring(false);
+    }
   };
 
   const handleReauthenticate = async () => {
@@ -763,7 +910,7 @@ export function FFNAccountDetails() {
               {testing ? `${tCommon('loading')}...` : t('testConnection')}
             </button>
             <button
-              onClick={handleConfigure}
+              onClick={handleOpenReconfigureModal}
               style={{
                 flex: 1,
                 height: 'clamp(36px, 3.53vw, 44px)',
@@ -981,6 +1128,434 @@ export function FFNAccountDetails() {
             >
               {t('shippingMethodsInfo')}
             </span>
+          </div>
+        </div>
+      )}
+
+      {/* Reconfigure Modal */}
+      {showReconfigureModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+          onClick={handleCloseReconfigureModal}
+        >
+          <div
+            style={{
+              backgroundColor: '#FFFFFF',
+              borderRadius: '12px',
+              width: '90%',
+              maxWidth: '480px',
+              maxHeight: '90vh',
+              overflow: 'auto',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: 'clamp(16px, 1.57vw, 24px)',
+                borderBottom: '1px solid #E5E7EB',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div
+                  style={{
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '8px',
+                    backgroundColor: '#003450',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <span
+                    style={{
+                      fontFamily: 'Inter, sans-serif',
+                      fontWeight: 700,
+                      fontSize: '12px',
+                      color: '#FFFFFF',
+                    }}
+                  >
+                    FFN
+                  </span>
+                </div>
+                <div>
+                  <h2
+                    style={{
+                      fontFamily: 'Inter, sans-serif',
+                      fontWeight: 600,
+                      fontSize: 'clamp(16px, 1.47vw, 20px)',
+                      color: '#111827',
+                      margin: 0,
+                    }}
+                  >
+                    {t('reconfigureTitle')}
+                  </h2>
+                  <p
+                    style={{
+                      fontFamily: 'Inter, sans-serif',
+                      fontSize: 'clamp(12px, 1.03vw, 14px)',
+                      color: '#6B7280',
+                      margin: 0,
+                    }}
+                  >
+                    {t('reconfigureSubtitle')}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={handleCloseReconfigureModal}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: '8px',
+                  color: '#6B7280',
+                }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: 'clamp(16px, 1.57vw, 24px)' }}>
+              {/* Error Message */}
+              {reconfigureError && (
+                <div
+                  style={{
+                    padding: 'clamp(10px, 0.98vw, 14px)',
+                    borderRadius: '6px',
+                    backgroundColor: '#FDE8E8',
+                    marginBottom: '16px',
+                  }}
+                >
+                  <span
+                    style={{
+                      fontFamily: 'Inter, sans-serif',
+                      fontSize: 'clamp(12px, 1.03vw, 14px)',
+                      color: '#9B1C1C',
+                    }}
+                  >
+                    {reconfigureError}
+                  </span>
+                </div>
+              )}
+
+              {/* Info Banner */}
+              <div
+                style={{
+                  padding: 'clamp(10px, 0.98vw, 14px)',
+                  borderRadius: '6px',
+                  backgroundColor: '#F0F9FF',
+                  border: '1px solid #BAE6FD',
+                  marginBottom: '20px',
+                }}
+              >
+                <span
+                  style={{
+                    fontFamily: 'Inter, sans-serif',
+                    fontSize: 'clamp(11px, 0.96vw, 13px)',
+                    color: '#0369A1',
+                  }}
+                >
+                  {t('reconfigureInfo')}
+                </span>
+              </div>
+
+              {/* Form Fields */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {/* JTL Client ID */}
+                <div>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontFamily: 'Inter, sans-serif',
+                      fontWeight: 500,
+                      fontSize: 'clamp(12px, 1.03vw, 14px)',
+                      color: '#374151',
+                      marginBottom: '6px',
+                    }}
+                  >
+                    {t('jtlClientId')} *
+                  </label>
+                  <input
+                    type="text"
+                    value={reconfigureForm.jtlClientId}
+                    onChange={(e) => setReconfigureForm({ ...reconfigureForm, jtlClientId: e.target.value })}
+                    placeholder={t('jtlClientIdPlaceholder')}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '6px',
+                      border: '1px solid #D1D5DB',
+                      fontFamily: 'Inter, sans-serif',
+                      fontSize: 'clamp(12px, 1.03vw, 14px)',
+                      color: '#111827',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+
+                {/* JTL Client Secret */}
+                <div>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontFamily: 'Inter, sans-serif',
+                      fontWeight: 500,
+                      fontSize: 'clamp(12px, 1.03vw, 14px)',
+                      color: '#374151',
+                      marginBottom: '6px',
+                    }}
+                  >
+                    {t('jtlClientSecret')} *
+                  </label>
+                  <input
+                    type="password"
+                    value={reconfigureForm.jtlClientSecret}
+                    onChange={(e) => setReconfigureForm({ ...reconfigureForm, jtlClientSecret: e.target.value })}
+                    placeholder={t('jtlClientSecretPlaceholder')}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '6px',
+                      border: '1px solid #D1D5DB',
+                      fontFamily: 'Inter, sans-serif',
+                      fontSize: 'clamp(12px, 1.03vw, 14px)',
+                      color: '#111827',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+
+                {/* Fulfiller ID */}
+                <div>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontFamily: 'Inter, sans-serif',
+                      fontWeight: 500,
+                      fontSize: 'clamp(12px, 1.03vw, 14px)',
+                      color: '#374151',
+                      marginBottom: '6px',
+                    }}
+                  >
+                    {t('fulfillerId')} *
+                  </label>
+                  <input
+                    type="text"
+                    value={reconfigureForm.fulfillerId}
+                    onChange={(e) => setReconfigureForm({ ...reconfigureForm, fulfillerId: e.target.value })}
+                    placeholder={t('fulfillerIdPlaceholder')}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '6px',
+                      border: '1px solid #D1D5DB',
+                      fontFamily: 'Inter, sans-serif',
+                      fontSize: 'clamp(12px, 1.03vw, 14px)',
+                      color: '#111827',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+
+                {/* Warehouse ID */}
+                <div>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontFamily: 'Inter, sans-serif',
+                      fontWeight: 500,
+                      fontSize: 'clamp(12px, 1.03vw, 14px)',
+                      color: '#374151',
+                      marginBottom: '6px',
+                    }}
+                  >
+                    {t('warehouseId')} *
+                  </label>
+                  <input
+                    type="text"
+                    value={reconfigureForm.warehouseId}
+                    onChange={(e) => setReconfigureForm({ ...reconfigureForm, warehouseId: e.target.value })}
+                    placeholder={t('warehouseIdPlaceholder')}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: '6px',
+                      border: '1px solid #D1D5DB',
+                      fontFamily: 'Inter, sans-serif',
+                      fontSize: 'clamp(12px, 1.03vw, 14px)',
+                      color: '#111827',
+                      boxSizing: 'border-box',
+                    }}
+                  />
+                </div>
+
+                {/* Environment */}
+                <div>
+                  <label
+                    style={{
+                      display: 'block',
+                      fontFamily: 'Inter, sans-serif',
+                      fontWeight: 500,
+                      fontSize: 'clamp(12px, 1.03vw, 14px)',
+                      color: '#374151',
+                      marginBottom: '6px',
+                    }}
+                  >
+                    {t('environment')} *
+                  </label>
+                  <div style={{ display: 'flex', gap: '12px' }}>
+                    <label
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        cursor: 'pointer',
+                        padding: '10px 16px',
+                        borderRadius: '6px',
+                        border: `2px solid ${reconfigureForm.environment === 'sandbox' ? '#003450' : '#D1D5DB'}`,
+                        backgroundColor: reconfigureForm.environment === 'sandbox' ? '#F0F9FF' : '#FFFFFF',
+                        flex: 1,
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="environment"
+                        value="sandbox"
+                        checked={reconfigureForm.environment === 'sandbox'}
+                        onChange={() => setReconfigureForm({ ...reconfigureForm, environment: 'sandbox' })}
+                        style={{ accentColor: '#003450' }}
+                      />
+                      <span
+                        style={{
+                          fontFamily: 'Inter, sans-serif',
+                          fontSize: 'clamp(12px, 1.03vw, 14px)',
+                          color: '#374151',
+                        }}
+                      >
+                        {t('sandbox')}
+                      </span>
+                    </label>
+                    <label
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        cursor: 'pointer',
+                        padding: '10px 16px',
+                        borderRadius: '6px',
+                        border: `2px solid ${reconfigureForm.environment === 'production' ? '#003450' : '#D1D5DB'}`,
+                        backgroundColor: reconfigureForm.environment === 'production' ? '#F0F9FF' : '#FFFFFF',
+                        flex: 1,
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="environment"
+                        value="production"
+                        checked={reconfigureForm.environment === 'production'}
+                        onChange={() => setReconfigureForm({ ...reconfigureForm, environment: 'production' })}
+                        style={{ accentColor: '#003450' }}
+                      />
+                      <span
+                        style={{
+                          fontFamily: 'Inter, sans-serif',
+                          fontSize: 'clamp(12px, 1.03vw, 14px)',
+                          color: '#374151',
+                        }}
+                      >
+                        {t('production')}
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '12px',
+                padding: 'clamp(16px, 1.57vw, 24px)',
+                borderTop: '1px solid #E5E7EB',
+              }}
+            >
+              <button
+                onClick={handleCloseReconfigureModal}
+                disabled={reconfiguring}
+                style={{
+                  padding: '10px 20px',
+                  borderRadius: '6px',
+                  border: '1px solid #D1D5DB',
+                  backgroundColor: '#FFFFFF',
+                  cursor: reconfiguring ? 'not-allowed' : 'pointer',
+                  fontFamily: 'Inter, sans-serif',
+                  fontWeight: 500,
+                  fontSize: 'clamp(12px, 1.03vw, 14px)',
+                  color: '#374151',
+                }}
+              >
+                {tCommon('cancel')}
+              </button>
+              <button
+                onClick={handleReconfigure}
+                disabled={reconfiguring}
+                style={{
+                  padding: '10px 20px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  backgroundColor: '#003450',
+                  cursor: reconfiguring ? 'not-allowed' : 'pointer',
+                  opacity: reconfiguring ? 0.6 : 1,
+                  fontFamily: 'Inter, sans-serif',
+                  fontWeight: 500,
+                  fontSize: 'clamp(12px, 1.03vw, 14px)',
+                  color: '#FFFFFF',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                {reconfiguring && (
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    style={{ animation: 'spin 1s linear infinite' }}
+                  >
+                    <path
+                      d="M12 2V6M12 18V22M4.93 4.93L7.76 7.76M16.24 16.24L19.07 19.07M2 12H6M18 12H22M4.93 19.07L7.76 16.24M16.24 7.76L19.07 4.93"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                )}
+                {reconfiguring ? t('saving') : t('saveAndAuthorize')}
+              </button>
+            </div>
           </div>
         </div>
       )}
