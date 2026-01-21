@@ -5,6 +5,20 @@ import { useRouter } from 'next/navigation';
 import { useTranslations, useLocale } from 'next-intl';
 import { useClients, getClientNames, useReturns, getReturnClientNames } from '@/lib/hooks';
 
+// Hook to detect mobile viewport
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkIsMobile = () => setIsMobile(window.innerWidth < 768);
+    checkIsMobile();
+    window.addEventListener('resize', checkIsMobile);
+    return () => window.removeEventListener('resize', checkIsMobile);
+  }, []);
+
+  return isMobile;
+}
+
 // Tab type for returns
 type ReturnTabType = 'all' | 'pending' | 'approved' | 'rejected' | 'processing' | 'completed';
 
@@ -29,7 +43,7 @@ interface ReturnsTableProps {
 }
 
 // Status tag component - needs translations
-const StatusTag = ({ status, t }: { status: ReturnStatus; t: (key: string) => string }) => {
+const StatusTag = ({ status, t, compact = false }: { status: ReturnStatus; t: (key: string) => string; compact?: boolean }) => {
   const getStatusConfig = () => {
     switch (status) {
       case 'completed':
@@ -53,13 +67,13 @@ const StatusTag = ({ status, t }: { status: ReturnStatus; t: (key: string) => st
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: '8px',
-        padding: '6px 14px',
+        gap: compact ? '4px' : '8px',
+        padding: compact ? '4px 10px' : '6px 14px',
         borderRadius: '9999px',
         backgroundColor: '#FFFFFF',
         border: '1px solid #E5E7EB',
         fontFamily: 'Inter, sans-serif',
-        fontSize: '14px',
+        fontSize: compact ? '12px' : '14px',
         fontWeight: 400,
         color: '#111827',
         whiteSpace: 'nowrap',
@@ -67,8 +81,8 @@ const StatusTag = ({ status, t }: { status: ReturnStatus; t: (key: string) => st
     >
       <span
         style={{
-          width: '8px',
-          height: '8px',
+          width: compact ? '6px' : '8px',
+          height: compact ? '6px' : '8px',
           borderRadius: '50%',
           backgroundColor: config.dotColor,
         }}
@@ -181,6 +195,30 @@ export function ReturnsTable({ showClientColumn, basePath = '/admin/returns' }: 
     }
   };
 
+  // Mobile hook
+  const isMobile = useIsMobile();
+
+  // Return Card Component for mobile view
+  const ReturnCard = ({ returnItem }: { returnItem: Return }) => (
+    <div
+      onClick={() => handleReturnClick(returnItem.returnId)}
+      className="p-4 bg-white border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
+    >
+      <div className="flex justify-between items-start mb-3">
+        <div>
+          <span className="text-sm font-medium text-gray-900">#{returnItem.returnId}</span>
+          <p className="text-xs text-gray-500 mt-1">{formatReturnDate(returnItem.returnDate)}</p>
+        </div>
+        <StatusTag status={returnItem.status} t={t} compact />
+      </div>
+      <div className="flex flex-col gap-1 text-xs text-gray-500">
+        {showClientColumn && <span>{t('client')}: {returnItem.client}</span>}
+        <span>{t('orderId')}: #{returnItem.orderId}</span>
+        <span>{t('quantity')}: {returnItem.quantity} | {t('condition')}: {returnItem.reason}</span>
+      </div>
+    </div>
+  );
+
   // Show loading state
   if (returnsLoading) {
     return (
@@ -227,7 +265,20 @@ export function ReturnsTable({ showClientColumn, basePath = '/admin/returns' }: 
       {/* Header with Tabs */}
       <div className="flex flex-col w-full">
         <div className="flex items-end justify-between w-full">
-        {/* Tabs */}
+        {/* Tabs - Mobile dropdown or desktop tabs */}
+        {isMobile ? (
+          <div className="flex-1">
+            <select
+              value={activeTab}
+              onChange={(e) => { setActiveTab(e.target.value as ReturnTabType); setCurrentPage(1); }}
+              className="w-full h-10 px-3 border border-gray-300 rounded-md bg-white text-sm font-medium text-gray-700"
+            >
+              <option value="all">{t('allReturns')} ({allCount})</option>
+              <option value="pending">{t('processing')} ({pendingCount})</option>
+              <option value="completed">{t('completed')} ({completedCount})</option>
+            </select>
+          </div>
+        ) : (
         <div
           className="flex items-end"
           style={{
@@ -352,8 +403,10 @@ export function ReturnsTable({ showClientColumn, basePath = '/admin/returns' }: 
             </span>
           </button>
         </div>
+        )}
 
-        {/* Invisible spacer to match height of pages with Create button */}
+        {/* Invisible spacer to match height of pages with Create button - hidden on mobile */}
+        {!isMobile && (
         <div
           style={{
             height: 'clamp(32px, 2.8vw, 38px)',
@@ -361,9 +414,11 @@ export function ReturnsTable({ showClientColumn, basePath = '/admin/returns' }: 
             visibility: 'hidden',
           }}
         />
+        )}
       </div>
 
-      {/* Full-width horizontal line below tabs */}
+      {/* Full-width horizontal line below tabs - hidden on mobile */}
+      {!isMobile && (
       <div
         style={{
           width: '100%',
@@ -372,13 +427,14 @@ export function ReturnsTable({ showClientColumn, basePath = '/admin/returns' }: 
           marginTop: '-1px', // Overlap with tab border
         }}
       />
+      )}
       </div>
 
       {/* Filter and Search Row */}
-      <div className="flex items-end gap-6 flex-wrap">
+      <div className="flex items-end gap-4 md:gap-6 flex-wrap">
         {/* Filter by Customer - Only show for admin/employee view */}
         {showClientColumn && (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 w-full md:w-auto">
           <label
             style={{
               fontFamily: 'Inter, sans-serif',
@@ -395,8 +451,9 @@ export function ReturnsTable({ showClientColumn, basePath = '/admin/returns' }: 
               value={customerFilter}
               onChange={(e) => { setCustomerFilter(e.target.value); setCurrentPage(1); }}
               disabled={clientsLoading}
+              className="w-full md:w-auto"
               style={{
-                width: 'clamp(200px, 23.5vw, 320px)',
+                minWidth: '200px',
                 maxWidth: '100%',
                 height: '38px',
                 borderRadius: '6px',
@@ -442,7 +499,7 @@ export function ReturnsTable({ showClientColumn, basePath = '/admin/returns' }: 
         )}
 
         {/* Search */}
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 w-full md:w-auto">
           <label
             style={{
               fontFamily: 'Inter, sans-serif',
@@ -459,8 +516,9 @@ export function ReturnsTable({ showClientColumn, basePath = '/admin/returns' }: 
             placeholder=""
             value={searchQuery}
             onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+            className="w-full md:w-auto"
             style={{
-              width: 'clamp(200px, 23.5vw, 320px)',
+              minWidth: '200px',
               maxWidth: '100%',
               height: '38px',
               borderRadius: '6px',
@@ -478,7 +536,19 @@ export function ReturnsTable({ showClientColumn, basePath = '/admin/returns' }: 
         </div>
       </div>
 
-      {/* Returns Table */}
+      {/* Returns Table - Mobile Cards or Desktop Table */}
+      {isMobile ? (
+        <div className="flex flex-col gap-3">
+          {paginatedReturns.map((returnItem) => (
+            <ReturnCard key={returnItem.id} returnItem={returnItem} />
+          ))}
+          {paginatedReturns.length === 0 && (
+            <div className="p-8 text-center text-gray-500 text-sm">
+              {t('noReturnsFound')}
+            </div>
+          )}
+        </div>
+      ) : (
       <div
         style={{
           width: '100%',
@@ -578,16 +648,17 @@ export function ReturnsTable({ showClientColumn, basePath = '/admin/returns' }: 
           </div>
         )}
       </div>
+      )}
 
       {/* Pagination */}
-      <div className="flex items-center justify-between flex-wrap gap-4" style={{ minHeight: '63px', paddingTop: '12px' }}>
-        <span style={{ fontFamily: 'Inter, sans-serif', fontSize: 'clamp(12px, 1vw, 14px)', lineHeight: '20px', color: '#374151' }}>
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4" style={{ paddingTop: '12px' }}>
+        <span className="text-sm text-gray-700 order-2 sm:order-1" style={{ fontFamily: 'Inter, sans-serif' }}>
           Showing <span style={{ fontWeight: 500 }}>{filteredReturns.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0}</span> to{' '}
           <span style={{ fontWeight: 500 }}>{Math.min(currentPage * itemsPerPage, filteredReturns.length)}</span> of{' '}
           <span style={{ fontWeight: 500 }}>{filteredReturns.length}</span> results
         </span>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 order-1 sm:order-2">
           <button
             onClick={handlePrevious}
             disabled={currentPage === 1}

@@ -82,8 +82,10 @@ function ChannelCard({ channel, onSettingsClick, onNameClick, t }: { channel: Ch
 
   return (
     <div
+      className="w-full sm:w-auto"
       style={{
-        width: 'clamp(292px, 28.65vw, 389px)',
+        minWidth: 'clamp(260px, 28.65vw, 389px)',
+        maxWidth: '100%',
         height: 'clamp(110px, 10.75vw, 146px)',
         borderRadius: '8px',
         backgroundColor: '#FFFFFF',
@@ -298,30 +300,24 @@ function ChannelTypeModal({
 
   return (
     <div
+      className="fixed inset-0 flex items-center justify-center z-[1000] p-4 md:p-0"
       style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
         backgroundColor: 'rgba(0, 0, 0, 0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1000,
       }}
       onClick={onClose}
     >
       <div
+        className="w-full max-w-[440px]"
         style={{
-          width: 'clamp(320px, 31.42vw, 440px)',
           backgroundColor: '#FFFFFF',
           borderRadius: 'clamp(8px, 0.78vw, 12px)',
-          padding: 'clamp(24px, 2.36vw, 32px)',
+          padding: 'clamp(20px, 2.36vw, 32px)',
           display: 'flex',
           flexDirection: 'column',
-          gap: 'clamp(20px, 1.96vw, 28px)',
+          gap: 'clamp(16px, 1.96vw, 28px)',
           boxShadow: '0px 20px 25px -5px rgba(0, 0, 0, 0.1), 0px 10px 10px -5px rgba(0, 0, 0, 0.04)',
+          maxHeight: '90vh',
+          overflowY: 'auto',
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -561,25 +557,21 @@ export function SalesChannels({ baseUrl }: SalesChannelsProps) {
 
   return (
     <div
+      className="px-4 sm:px-6 md:px-8 lg:px-[52px] py-6 md:py-8"
       style={{
         width: '100%',
         minHeight: '100%',
         backgroundColor: '#F9FAFB',
-        padding: 'clamp(24px, 2.36vw, 32px) clamp(39px, 3.83vw, 52px)',
       }}
     >
       {/* Header Row - Back Button and New Channel Button */}
       <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 'clamp(30px, 2.94vw, 40px)',
-        }}
+        className="flex flex-col sm:flex-row gap-3 sm:gap-0 sm:justify-between sm:items-center mb-6 md:mb-8"
       >
         {/* Back Button */}
         <button
           onClick={handleBack}
+          className="w-full sm:w-auto"
           style={{
             height: 'clamp(29px, 2.80vw, 38px)',
             borderRadius: '6px',
@@ -609,6 +601,7 @@ export function SalesChannels({ baseUrl }: SalesChannelsProps) {
         {/* New Channel Button */}
         <button
           onClick={handleNewChannel}
+          className="w-full sm:w-auto"
           style={{
             height: 'clamp(29px, 2.80vw, 38px)',
             borderRadius: '6px',
@@ -724,11 +717,7 @@ export function SalesChannels({ baseUrl }: SalesChannelsProps) {
           ) : /* Content - Either Channel Cards or Empty State */
           hasChannels ? (
             <div
-              style={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: 'clamp(18px, 1.77vw, 24px)',
-              }}
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6"
             >
               {channels.map((channel) => (
                 <ChannelCard

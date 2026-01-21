@@ -68,7 +68,7 @@ export class JTLOrderSyncService {
             accessToken: jtlConfig.accessToken ? encryptionService.decrypt(jtlConfig.accessToken) : undefined,
             refreshToken: jtlConfig.refreshToken ? encryptionService.decrypt(jtlConfig.refreshToken) : undefined,
             tokenExpiresAt: jtlConfig.tokenExpiresAt || undefined,
-        });
+        }, this.prisma, clientId);
     }
 
     /**
@@ -113,11 +113,22 @@ export class JTLOrderSyncService {
                 return { success: true };
             }
 
+            // Get JTL config
+            console.log(`[JTL-FFN-SYNC] Getting JTL config for client ${order.clientId}...`);
+            const jtlConfig = await this.prisma.jtlConfig.findUnique({
+                where: { clientId_fk: order.clientId },
+            });
+
+            if (!jtlConfig || !jtlConfig.isActive) {
+                console.log(`[JTL-FFN-SYNC] ERROR: JTL not configured or inactive for client ${order.clientId}`);
+                return { success: false, error: 'JTL not configured for this client' };
+            }
+
             // Get JTL service
             console.log(`[JTL-FFN-SYNC] Getting JTL service for client ${order.clientId}...`);
             const jtlService = await this.getJTLService(order.clientId);
             if (!jtlService) {
-                console.log(`[JTL-FFN-SYNC] ERROR: JTL not configured or inactive for client ${order.clientId}`);
+                console.log(`[JTL-FFN-SYNC] ERROR: JTL service initialization failed for client ${order.clientId}`);
                 return { success: false, error: 'JTL not configured for this client' };
             }
             console.log(`[JTL-FFN-SYNC] JTL service initialized successfully`);
@@ -130,11 +141,11 @@ export class JTLOrderSyncService {
 
             // Transform order to JTL outbound format
             console.log(`[JTL-FFN-SYNC] Transforming order to JTL outbound format...`);
-            const outbound = this.transformOrderToOutbound(order);
+            const outbound = this.transformOrderToOutbound(order, jtlConfig);
             console.log(`[JTL-FFN-SYNC] Outbound payload prepared:`, {
                 merchantOutboundNumber: outbound.merchantOutboundNumber,
                 itemCount: outbound.items?.length,
-                shippingCountry: outbound.shipTo?.countryCode,
+                shippingCountry: (outbound.shippingAddress as any)?.country,
             });
 
             // Create outbound in JTL-FFN
@@ -298,13 +309,21 @@ export class JTLOrderSyncService {
                 throw new Error(`Split order ${splitOrderId} not found`);
             }
 
+            const jtlConfig = await this.prisma.jtlConfig.findUnique({
+                where: { clientId_fk: order.clientId },
+            });
+
+            if (!jtlConfig || !jtlConfig.isActive) {
+                return { success: false, error: 'JTL not configured for this client' };
+            }
+
             const jtlService = await this.getJTLService(order.clientId);
             if (!jtlService) {
                 return { success: false, error: 'JTL not configured for this client' };
             }
 
             // Create outbound with only the split items
-            const outbound = this.transformOrderToOutbound(order, items);
+            const outbound = this.transformOrderToOutbound(order, jtlConfig, items);
             const result = await jtlService.createOutbound(outbound);
 
             // Update order
@@ -436,6 +455,7 @@ export class JTLOrderSyncService {
      */
     private transformOrderToOutbound(
         order: Order & { items: Array<{ sku: string | null; productName: string | null; quantity: number; unitPrice: any; totalPrice: any; product?: { jtlProductId?: string | null } | null }> },
+        jtlConfig: { warehouseId: string; fulfillerId: string },
         filterItems?: Array<{ sku: string; quantity: number }>
     ): JTLOutbound {
         let items = order.items;
@@ -447,31 +467,42 @@ export class JTLOrderSyncService {
             );
         }
 
+        // Parse shipping name into firstname/lastname for JTL format
+        const fullName = `${order.shippingFirstName || ''} ${order.shippingLastName || ''}`.trim() ||
+            order.customerName ||
+            'Unknown';
+        const nameParts = fullName.split(' ');
+        const firstname = nameParts[0] || 'Unknown';
+        const lastname = nameParts.slice(1).join(' ') || firstname;
+
         return {
             merchantOutboundNumber: order.orderId,
+            warehouseId: jtlConfig.warehouseId,
+            fulfillerId: jtlConfig.fulfillerId,
+            currency: order.currency || 'EUR',
             customerOrderNumber: order.orderNumber || order.orderId,
             orderDate: order.orderDate.toISOString(),
-            shipTo: {
-                name: `${order.shippingFirstName || ''} ${order.shippingLastName || ''}`.trim() ||
-                    order.customerName ||
-                    'Unknown',
+            shippingAddress: {
+                firstname,
+                lastname,
                 company: order.shippingCompany || undefined,
                 street: order.shippingAddress1 || '',
-                additionalAddress: order.shippingAddress2 || undefined,
+                addition: order.shippingAddress2 || undefined,
                 city: order.shippingCity || '',
                 zip: order.shippingZip || '',
-                countryCode: order.shippingCountryCode || order.shippingCountry || 'DE',
+                country: order.shippingCountryCode || order.shippingCountry || 'DE',
                 phone: order.customerPhone || undefined,
                 email: order.customerEmail || undefined,
             },
             items: items.map((item) => ({
                 merchantSku: item.sku || 'UNKNOWN',
                 jfsku: item.product?.jtlProductId || undefined,
+                outboundItemId: item.product?.jtlProductId || item.sku || 'UNKNOWN',
                 name: item.productName || item.sku || 'Unknown Product',
                 quantity: item.quantity,
                 unitPrice: item.unitPrice ? parseFloat(item.unitPrice.toString()) : 0,
             })),
-            shippingMethod: order.carrierSelection || order.shippingMethod || undefined,
+            shippingMethod: order.carrierSelection || order.shippingMethod || 'Standard',
             priority: order.priorityLevel || 0,
             note: order.warehouseNotes || order.notes || undefined,
         };

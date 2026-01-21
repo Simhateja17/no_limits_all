@@ -10,6 +10,23 @@ import { useSupabaseRealtime } from '@/lib/hooks/useSupabaseRealtime';
 import type { Contact } from '@/components/chats/ContactsList';
 import type { ChatMessage } from '@/components/chats/ChatSection';
 
+// Custom hook to detect screen size
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkIsMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    checkIsMobile();
+    window.addEventListener('resize', checkIsMobile);
+    return () => window.removeEventListener('resize', checkIsMobile);
+  }, []);
+
+  return isMobile;
+}
+
 // Extended message type with status for optimistic updates
 interface OptimisticMessage extends ChatMessage {
   status?: 'pending' | 'sent' | 'delivered' | 'read' | 'error';
@@ -38,6 +55,7 @@ interface MessageCache {
 export default function AdminChatPage() {
   const { user, isAuthenticated } = useAuthStore();
   const router = useRouter();
+  const isMobile = useIsMobile();
   const [contacts, setContacts] = useState<ExtendedContact[]>([]);
   const [selectedContact, setSelectedContact] = useState<ExtendedContact | null>(null);
   const [messages, setMessages] = useState<OptimisticMessage[]>([]);
@@ -477,6 +495,11 @@ export default function AdminChatPage() {
     return null;
   }
 
+  // Mobile back button handler
+  const handleBackToContacts = () => {
+    setSelectedContact(null);
+  };
+
   return (
     <DashboardLayout>
       <div
@@ -486,33 +509,96 @@ export default function AdminChatPage() {
           background: '#FFFFFF',
         }}
       >
-        {/* Contacts List */}
-        <ContactsList
-          contacts={contacts}
-          selectedContactId={selectedContact?.id}
-          onSelectContact={handleSelectContact}
-        />
+        {/* Mobile: Show contacts list OR chat section */}
+        {isMobile ? (
+          <>
+            {/* Show contacts list when no contact selected */}
+            {!selectedContact && (
+              <div className="w-full">
+                <ContactsList
+                  contacts={contacts}
+                  selectedContactId={undefined}
+                  onSelectContact={handleSelectContact}
+                />
+              </div>
+            )}
+            
+            {/* Show chat section when contact selected */}
+            {selectedContact && (
+              <div className="flex flex-col w-full h-full">
+                {/* Mobile header with back button */}
+                <div 
+                  className="flex items-center px-4 py-3 border-b border-gray-200 bg-white"
+                  style={{ flexShrink: 0 }}
+                >
+                  <button
+                    onClick={handleBackToContacts}
+                    className="flex items-center justify-center w-8 h-8 mr-2 rounded-full hover:bg-gray-100 transition-colors"
+                  >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#374151" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M19 12H5M12 19l-7-7 7-7"/>
+                    </svg>
+                  </button>
+                  <span className="font-medium text-gray-900 truncate">{selectedContact.name}</span>
+                </div>
+                
+                {/* Chat section without its own header on mobile (we have the back button header above) */}
+                <div className="flex-1 min-h-0">
+                  <ChatSection
+                    contact={selectedContact}
+                    messages={isLoadingMessages ? [] : messages}
+                    currentUserId={user?.id || 'admin'}
+                    currentUserName={user?.name || 'Admin'}
+                    currentUserAvatar={'/imageofchat.png'}
+                    onSendMessage={handleSendMessage}
+                    onTyping={handleTyping}
+                    onLoadMore={loadMoreMessages}
+                    hasMoreMessages={pagination.hasMore}
+                    isLoadingMore={pagination.isLoading}
+                    isLoadingMessages={isLoadingMessages}
+                    isTyping={isTyping}
+                    typingUser={
+                      isTyping && selectedContact
+                        ? { name: selectedContact.name, avatar: selectedContact.avatar }
+                        : undefined
+                    }
+                  />
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+          /* Desktop: Show both contacts list and chat section side by side */
+          <>
+            {/* Contacts List */}
+            <ContactsList
+              contacts={contacts}
+              selectedContactId={selectedContact?.id}
+              onSelectContact={handleSelectContact}
+            />
 
-        {/* Chat Section */}
-        <ChatSection
-          contact={selectedContact}
-          messages={isLoadingMessages ? [] : messages}
-          currentUserId={user?.id || 'admin'}
-          currentUserName={user?.name || 'Admin'}
-          currentUserAvatar={'/imageofchat.png'}
-          onSendMessage={handleSendMessage}
-          onTyping={handleTyping}
-          onLoadMore={loadMoreMessages}
-          hasMoreMessages={pagination.hasMore}
-          isLoadingMore={pagination.isLoading}
-          isLoadingMessages={isLoadingMessages}
-          isTyping={isTyping}
-          typingUser={
-            isTyping && selectedContact
-              ? { name: selectedContact.name, avatar: selectedContact.avatar }
-              : undefined
-          }
-        />
+            {/* Chat Section */}
+            <ChatSection
+              contact={selectedContact}
+              messages={isLoadingMessages ? [] : messages}
+              currentUserId={user?.id || 'admin'}
+              currentUserName={user?.name || 'Admin'}
+              currentUserAvatar={'/imageofchat.png'}
+              onSendMessage={handleSendMessage}
+              onTyping={handleTyping}
+              onLoadMore={loadMoreMessages}
+              hasMoreMessages={pagination.hasMore}
+              isLoadingMore={pagination.isLoading}
+              isLoadingMessages={isLoadingMessages}
+              isTyping={isTyping}
+              typingUser={
+                isTyping && selectedContact
+                  ? { name: selectedContact.name, avatar: selectedContact.avatar }
+                  : undefined
+              }
+            />
+          </>
+        )}
       </div>
     </DashboardLayout>
   );

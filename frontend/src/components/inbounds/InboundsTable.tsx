@@ -1,9 +1,23 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useInbounds, getInboundClientNames, getDeliveryTypes } from '@/lib/hooks';
+
+// Hook to detect mobile viewport
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkIsMobile = () => setIsMobile(window.innerWidth < 768);
+    checkIsMobile();
+    window.addEventListener('resize', checkIsMobile);
+    return () => window.removeEventListener('resize', checkIsMobile);
+  }, []);
+
+  return isMobile;
+}
 
 // Tab type
 type TabType = 'all' | 'booked_in' | 'partially_booked_in' | 'pending';
@@ -119,6 +133,42 @@ export function InboundsTable({ showClientColumn, baseUrl, userRole }: InboundsT
     }
   };
 
+  // Mobile hook
+  const isMobile = useIsMobile();
+
+  // Get status label
+  const getStatusLabel = (status: Inbound['status']) => {
+    switch (status) {
+      case 'booked_in': return t('bookedIn');
+      case 'partially_booked_in': return t('partiallyBookedIn');
+      case 'pending': return t('pending');
+      default: return status;
+    }
+  };
+
+  // Inbound Card Component for mobile view
+  const InboundCard = ({ inbound }: { inbound: Inbound }) => (
+    <div
+      onClick={() => handleInboundClick(inbound.inboundId)}
+      className="p-4 bg-white border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
+    >
+      <div className="flex justify-between items-start mb-3">
+        <div>
+          <span className="text-sm font-medium text-gray-900">#{inbound.inboundId}</span>
+          <p className="text-xs text-gray-500 mt-1">{inbound.deliveryType}</p>
+        </div>
+        <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded">
+          {getStatusLabel(inbound.status)}
+        </span>
+      </div>
+      <div className="flex flex-col gap-1 text-xs text-gray-500">
+        <span>{t('announcedQty')}: {inbound.anouncedQty} | {t('numberOfProducts')}: {inbound.noOfProducts}</span>
+        <span>{t('expectedDate')}: {inbound.expectDate}</span>
+        {showClientColumn && <span>{t('client')}: {inbound.client}</span>}
+      </div>
+    </div>
+  );
+
   // Show loading state
   if (inboundsLoading) {
     return (
@@ -167,8 +217,22 @@ export function InboundsTable({ showClientColumn, baseUrl, userRole }: InboundsT
     <div className="w-full flex flex-col" style={{ gap: 'clamp(16px, 1.76vw, 24px)' }}>
       {/* Header with Tabs and Create Button */}
       <div className="flex flex-col w-full">
-        <div className="flex items-end justify-between w-full">
-          {/* Tabs */}
+        <div className="flex items-end justify-between w-full gap-4">
+          {/* Tabs - Mobile dropdown or desktop tabs */}
+          {isMobile ? (
+            <div className="flex-1">
+              <select
+                value={activeTab}
+                onChange={(e) => { setActiveTab(e.target.value as TabType); setCurrentPage(1); }}
+                className="w-full h-10 px-3 border border-gray-300 rounded-md bg-white text-sm font-medium text-gray-700"
+              >
+                <option value="all">{t('allInbounds')} ({allCount})</option>
+                <option value="booked_in">{t('bookedIn')} ({bookedInCount})</option>
+                <option value="partially_booked_in">{t('partiallyBookedIn')} ({partiallyBookedInCount})</option>
+                <option value="pending">{t('pending')} ({pendingCount})</option>
+              </select>
+            </div>
+          ) : (
           <div
             className="flex items-end"
             style={{
@@ -327,10 +391,12 @@ export function InboundsTable({ showClientColumn, baseUrl, userRole }: InboundsT
               </span>
             </button>
           </div>
+          )}
 
-          {/* Create Inbound Button - 138x38 at 1358px, proportional */}
+          {/* Create Inbound Button */}
           <button
             onClick={() => router.push(`${baseUrl}/create`)}
+            className="shrink-0"
             style={{
               height: 'clamp(32px, 2.8vw, 38px)',
               borderRadius: '6px',
@@ -346,7 +412,7 @@ export function InboundsTable({ showClientColumn, baseUrl, userRole }: InboundsT
               cursor: 'pointer',
               border: 'none',
               whiteSpace: 'nowrap',
-              marginBottom: 'clamp(8px, 0.88vw, 12px)',
+              marginBottom: isMobile ? '0' : 'clamp(8px, 0.88vw, 12px)',
             }}
           >
             <span
@@ -359,12 +425,13 @@ export function InboundsTable({ showClientColumn, baseUrl, userRole }: InboundsT
                 whiteSpace: 'nowrap',
               }}
             >
-              {t('createInbound')}
+              {isMobile ? '+' : t('createInbound')}
             </span>
           </button>
         </div>
 
-        {/* Full-width horizontal line below tabs - 1216px width at 1358px screen = 89.5% */}
+        {/* Full-width horizontal line below tabs - hidden on mobile */}
+        {!isMobile && (
         <div
           style={{
             width: '100%',
@@ -372,12 +439,13 @@ export function InboundsTable({ showClientColumn, baseUrl, userRole }: InboundsT
             backgroundColor: '#E5E7EB',
           }}
         />
+        )}
       </div>
 
       {/* Filter and Search Row */}
-      <div className="flex items-end flex-wrap" style={{ gap: 'clamp(16px, 1.76vw, 24px)' }}>
+      <div className="flex items-end flex-wrap gap-4 md:gap-6">
         {/* Filter */}
-        <div className="flex flex-col" style={{ gap: 'clamp(4px, 0.59vw, 8px)' }}>
+        <div className="flex flex-col w-full md:w-auto" style={{ gap: 'clamp(4px, 0.59vw, 8px)' }}>
           <label
             style={{
               fontFamily: 'Inter, sans-serif',
@@ -393,8 +461,9 @@ export function InboundsTable({ showClientColumn, baseUrl, userRole }: InboundsT
             <select
               value={filterValue}
               onChange={(e) => { setFilterValue(e.target.value); setCurrentPage(1); }}
+              className="w-full md:w-auto"
               style={{
-                width: 'clamp(260px, 23.56vw, 320px)',
+                minWidth: '200px',
                 maxWidth: '100%',
                 height: 'clamp(32px, 2.8vw, 38px)',
                 borderRadius: '6px',
@@ -439,7 +508,7 @@ export function InboundsTable({ showClientColumn, baseUrl, userRole }: InboundsT
         </div>
 
         {/* Search */}
-        <div className="flex flex-col" style={{ gap: 'clamp(4px, 0.59vw, 8px)' }}>
+        <div className="flex flex-col w-full md:w-auto" style={{ gap: 'clamp(4px, 0.59vw, 8px)' }}>
           <label
             style={{
               fontFamily: 'Inter, sans-serif',
@@ -456,8 +525,9 @@ export function InboundsTable({ showClientColumn, baseUrl, userRole }: InboundsT
             placeholder=""
             value={searchQuery}
             onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+            className="w-full md:w-auto"
             style={{
-              width: 'clamp(180px, 17.67vw, 240px)',
+              minWidth: '180px',
               maxWidth: '100%',
               height: 'clamp(32px, 2.8vw, 38px)',
               borderRadius: '6px',
@@ -475,7 +545,19 @@ export function InboundsTable({ showClientColumn, baseUrl, userRole }: InboundsT
         </div>
       </div>
 
-      {/* Inbounds Table */}
+      {/* Inbounds Table - Mobile Cards or Desktop Table */}
+      {isMobile ? (
+        <div className="flex flex-col gap-3">
+          {paginatedInbounds.map((inbound) => (
+            <InboundCard key={inbound.id} inbound={inbound} />
+          ))}
+          {paginatedInbounds.length === 0 && (
+            <div className="p-8 text-center text-gray-500 text-sm">
+              {t('noInboundsFound')}
+            </div>
+          )}
+        </div>
+      ) : (
       <div
         style={{
           width: '100%',
@@ -689,20 +771,19 @@ export function InboundsTable({ showClientColumn, baseUrl, userRole }: InboundsT
           </div>
         )}
       </div>
+      )}
 
       {/* Pagination */}
       <div
-        className="flex items-center justify-between"
+        className="flex flex-col sm:flex-row items-center justify-between gap-4"
         style={{
           paddingTop: 'clamp(8px, 0.88vw, 12px)',
         }}
       >
         <span
+          className="text-sm text-gray-700 order-2 sm:order-1"
           style={{
             fontFamily: 'Inter, sans-serif',
-            fontSize: 'clamp(12px, 1.03vw, 14px)',
-            lineHeight: '20px',
-            color: '#374151',
           }}
         >
           {tCommon('showing')} <span style={{ fontWeight: 500 }}>{filteredInbounds.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0}</span> {tCommon('to')}{' '}
@@ -710,17 +791,17 @@ export function InboundsTable({ showClientColumn, baseUrl, userRole }: InboundsT
           <span style={{ fontWeight: 500 }}>{filteredInbounds.length}</span> {tCommon('results')}
         </span>
 
-        <div className="flex items-center" style={{ gap: 'clamp(8px, 0.88vw, 12px)' }}>
+        <div className="flex items-center gap-3 order-1 sm:order-2">
           {/* Previous Button */}
           <button
             onClick={handlePrevious}
             disabled={currentPage === 1}
             style={{
-              minWidth: 'clamp(76px, 6.77vw, 92px)',
-              height: 'clamp(32px, 2.8vw, 38px)',
+              minWidth: '92px',
+              height: '38px',
               borderRadius: '6px',
               border: '1px solid #D1D5DB',
-              padding: 'clamp(7px, 0.66vw, 9px) clamp(13px, 1.25vw, 17px)',
+              padding: '9px 17px',
               backgroundColor: '#FFFFFF',
               boxShadow: '0px 1px 2px 0px rgba(0, 0, 0, 0.05)',
               cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
@@ -734,7 +815,7 @@ export function InboundsTable({ showClientColumn, baseUrl, userRole }: InboundsT
               style={{
                 fontFamily: 'Inter, sans-serif',
                 fontWeight: 500,
-                fontSize: 'clamp(12px, 1.03vw, 14px)',
+                fontSize: '14px',
                 lineHeight: '20px',
                 color: '#374151',
               }}
@@ -748,11 +829,11 @@ export function InboundsTable({ showClientColumn, baseUrl, userRole }: InboundsT
             onClick={handleNext}
             disabled={currentPage >= totalPages}
             style={{
-              minWidth: 'clamp(76px, 6.77vw, 92px)',
-              height: 'clamp(32px, 2.8vw, 38px)',
+              minWidth: '92px',
+              height: '38px',
               borderRadius: '6px',
               border: '1px solid #D1D5DB',
-              padding: 'clamp(7px, 0.66vw, 9px) clamp(13px, 1.25vw, 17px)',
+              padding: '9px 17px',
               backgroundColor: '#FFFFFF',
               boxShadow: '0px 1px 2px 0px rgba(0, 0, 0, 0.05)',
               cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer',
@@ -766,7 +847,7 @@ export function InboundsTable({ showClientColumn, baseUrl, userRole }: InboundsT
               style={{
                 fontFamily: 'Inter, sans-serif',
                 fontWeight: 500,
-                fontSize: 'clamp(12px, 1.03vw, 14px)',
+                fontSize: '14px',
                 lineHeight: '20px',
                 color: '#374151',
               }}

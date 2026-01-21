@@ -200,16 +200,16 @@ export function ChatSection({
 
   return (
     <div
-      className="flex flex-col h-full"
+      className="flex flex-col h-full w-full"
       style={{
         flex: 1,
         background: '#FFFFFF',
-        minWidth: '400px',
+        minWidth: 0, // Allow shrinking below content size for flex
       }}
     >
       {/* Chat Header with Client Name */}
       <div
-        className="flex items-center px-6 py-4"
+        className="flex items-center px-4 md:px-6 py-3 md:py-4"
         style={{
           borderBottom: '1px solid #E4E9EE',
           background: '#FFFFFF',
@@ -218,25 +218,25 @@ export function ChatSection({
         <div
           className="relative flex-shrink-0"
           style={{
-            width: '40px',
-            height: '40px',
-            marginRight: '12px',
+            width: '36px',
+            height: '36px',
+            marginRight: '10px',
           }}
         >
           <Image
             src={contact.avatar}
             alt={contact.name}
-            width={40}
-            height={40}
-            className="rounded-full object-cover"
-            style={{ width: '40px', height: '40px' }}
+            width={36}
+            height={36}
+            className="rounded-full object-cover w-9 h-9 md:w-10 md:h-10"
           />
         </div>
         <span
+          className="truncate"
           style={{
             fontFamily: 'Poppins, sans-serif',
             fontWeight: 600,
-            fontSize: '18px',
+            fontSize: 'clamp(14px, 1.3vw, 18px)',
             lineHeight: '100%',
             color: '#192A3E',
           }}
@@ -259,7 +259,7 @@ export function ChatSection({
       <div
         ref={messagesContainerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto p-4"
+        className="flex-1 overflow-y-auto p-3 md:p-4"
         style={{
           background: '#FAFBFC',
           minHeight: 0,
@@ -367,7 +367,7 @@ export function ChatSection({
 
               {/* Message bubble */}
               <div
-                className={`inline-block max-w-[80%] ${isCurrentUser ? 'ml-auto' : ''}`}
+                className={`inline-block max-w-[90%] md:max-w-[80%] ${isCurrentUser ? 'ml-auto' : ''}`}
               >
                 <div
                   style={{
@@ -499,11 +499,11 @@ export function ChatSection({
 
       {/* Input Area */}
       <div
-        className="flex items-center px-4 py-3"
+        className="flex items-center px-3 md:px-4 py-2 md:py-3"
         style={{
           borderTop: '1px solid #E4E9EE',
           background: '#FFFFFF',
-          minHeight: '64px',
+          minHeight: '56px',
           flexShrink: 0,
         }}
       >

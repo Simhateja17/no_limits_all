@@ -180,8 +180,9 @@ export function SyncProgressModal({ channelId, isOpen, onComplete }: SyncProgres
             backgroundColor: '#F3F4F6',
             borderRadius: 16,
             padding: '40px 60px',
-            minWidth: 400,
+            width: '100%',
             maxWidth: 500,
+            margin: '0 16px',
             boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
             border: '2px solid #E5E7EB',
           }}

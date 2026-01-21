@@ -79,11 +79,9 @@ export function ContactsList({ contacts, selectedContactId, onSelectContact }: C
 
   return (
     <div
-      className="flex flex-col overflow-y-auto"
+      className="flex flex-col overflow-y-auto w-full md:w-auto md:max-w-[441px]"
       style={{
-        width: '100%',
-        maxWidth: '441px',
-        minWidth: '280px',
+        minWidth: 0, // Allow shrinking for flex container
         height: '100%',
         borderRight: '1px solid #E4E9EE',
         background: '#FFFFFF',

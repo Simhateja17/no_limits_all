@@ -1,10 +1,24 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { useTranslations } from 'next-intl';
 import { dataApi, CreateTaskInput } from '@/lib/data-api';
+
+// Hook to detect mobile viewport
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkIsMobile = () => setIsMobile(window.innerWidth < 768);
+    checkIsMobile();
+    window.addEventListener('resize', checkIsMobile);
+    return () => window.removeEventListener('resize', checkIsMobile);
+  }, []);
+
+  return isMobile;
+}
 
 // Tab type
 type TabType = 'all' | 'open' | 'closed';
@@ -95,7 +109,7 @@ function CreateTaskModal({
           top: '50%',
           left: '50%',
           transform: 'translate(-50%, -50%)',
-          width: 'clamp(360px, 37.7vw, 512px)',
+          width: 'min(90vw, 512px)',
           maxHeight: '90vh',
           borderRadius: '8px',
           padding: 'clamp(16px, 1.77vw, 24px)',
@@ -638,12 +652,53 @@ export function TasksTable({ showClientColumn, baseUrl }: TasksTableProps) {
     return status === 'Open' ? t('open') : t('closed');
   };
 
+  // Mobile hook
+  const isMobile = useIsMobile();
+
+  // Task Card Component for mobile view
+  const TaskCard = ({ task }: { task: Task }) => (
+    <div
+      onClick={() => handleTaskClick(task.taskId)}
+      className="p-4 bg-white border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
+    >
+      <div className="flex justify-between items-start mb-3">
+        <div>
+          <span className="text-sm font-medium text-gray-900">#{task.taskId}</span>
+          <p className="text-xs text-gray-500 mt-1">{task.client}</p>
+        </div>
+        <div
+          className="px-3 py-1 text-xs font-medium text-white rounded"
+          style={{ backgroundColor: task.status === 'Open' ? '#F7CB5B' : '#003450' }}
+        >
+          {getTranslatedStatus(task.status)}
+        </div>
+      </div>
+      <div className="flex justify-between items-center">
+        <span className="text-xs text-gray-500">{task.created}</span>
+        <PriorityBadge priority={task.priority} />
+      </div>
+    </div>
+  );
+
   return (
     <div className="w-full flex flex-col" style={{ gap: 'clamp(16px, 1.76vw, 24px)' }}>
       {/* Header with Tabs and Create Button */}
       <div className="flex flex-col w-full">
-        <div className="flex items-end justify-between w-full">
-        {/* Tabs */}
+        <div className="flex items-end justify-between w-full gap-4">
+        {/* Tabs - Mobile dropdown or desktop tabs */}
+        {isMobile ? (
+          <div className="flex-1">
+            <select
+              value={activeTab}
+              onChange={(e) => { setActiveTab(e.target.value as TabType); setCurrentPage(1); }}
+              className="w-full h-10 px-3 border border-gray-300 rounded-md bg-white text-sm font-medium text-gray-700"
+            >
+              <option value="all">{t('allTasks')} ({allCount})</option>
+              <option value="open">{t('open')} ({openCount})</option>
+              <option value="closed">{t('closed')} ({closedCount})</option>
+            </select>
+          </div>
+        ) : (
         <div
           className="flex items-end"
           style={{
@@ -764,10 +819,12 @@ export function TasksTable({ showClientColumn, baseUrl }: TasksTableProps) {
             </span>
           </button>
         </div>
+        )}
 
         {/* Create Task Button */}
         <button
           onClick={() => setIsCreateModalOpen(true)}
+          className="shrink-0"
           style={{
             height: 'clamp(32px, 2.8vw, 38px)',
             borderRadius: '6px',
@@ -783,7 +840,7 @@ export function TasksTable({ showClientColumn, baseUrl }: TasksTableProps) {
             cursor: 'pointer',
             border: 'none',
             whiteSpace: 'nowrap',
-            marginBottom: 'clamp(8px, 0.88vw, 12px)',
+            marginBottom: isMobile ? '0' : 'clamp(8px, 0.88vw, 12px)',
           }}
         >
           <span
@@ -796,12 +853,13 @@ export function TasksTable({ showClientColumn, baseUrl }: TasksTableProps) {
               whiteSpace: 'nowrap',
             }}
           >
-            {t('createTask')}
+            {isMobile ? '+' : t('createTask')}
           </span>
         </button>
       </div>
 
-      {/* Full-width horizontal line below tabs */}
+      {/* Full-width horizontal line below tabs - hidden on mobile */}
+      {!isMobile && (
       <div
         style={{
           width: '100%',
@@ -810,12 +868,13 @@ export function TasksTable({ showClientColumn, baseUrl }: TasksTableProps) {
           marginTop: '-1px', // Overlap with tab border
         }}
       />
+      )}
       </div>
 
       {/* Filter and Search Row */}
-      <div className="flex items-end gap-6 flex-wrap">
+      <div className="flex items-end gap-4 md:gap-6 flex-wrap">
         {/* Filter by Client (admin/employee) or Channels (client) */}
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 w-full md:w-auto">
           <label
             style={{
               fontFamily: 'Inter, sans-serif',
@@ -831,8 +890,8 @@ export function TasksTable({ showClientColumn, baseUrl }: TasksTableProps) {
             <select
               value={clientFilter}
               onChange={(e) => { setClientFilter(e.target.value); setCurrentPage(1); }}
+              className="w-full md:w-[320px]"
               style={{
-                width: '320px',
                 maxWidth: '100%',
                 height: '38px',
                 borderRadius: '6px',
@@ -884,7 +943,7 @@ export function TasksTable({ showClientColumn, baseUrl }: TasksTableProps) {
         </div>
 
         {/* Search */}
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 w-full md:w-auto">
           <label
             style={{
               fontFamily: 'Inter, sans-serif',
@@ -901,8 +960,8 @@ export function TasksTable({ showClientColumn, baseUrl }: TasksTableProps) {
             placeholder=""
             value={searchQuery}
             onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+            className="w-full md:w-[320px]"
             style={{
-              width: '320px',
               maxWidth: '100%',
               height: '38px',
               borderRadius: '6px',
@@ -920,7 +979,19 @@ export function TasksTable({ showClientColumn, baseUrl }: TasksTableProps) {
         </div>
       </div>
 
-      {/* Tasks Table */}
+      {/* Tasks Table - Mobile Cards or Desktop Table */}
+      {isMobile ? (
+        <div className="flex flex-col gap-3">
+          {paginatedTasks.map((task) => (
+            <TaskCard key={task.id} task={task} />
+          ))}
+          {paginatedTasks.length === 0 && (
+            <div className="p-8 text-center text-gray-500 text-sm">
+              {t('noTasksFound')}
+            </div>
+          )}
+        </div>
+      ) : (
       <div
         style={{
           width: '100%',
@@ -1170,21 +1241,19 @@ export function TasksTable({ showClientColumn, baseUrl }: TasksTableProps) {
           </div>
         )}
       </div>
+      )}
 
       {/* Pagination */}
       <div
-        className="flex items-center justify-between"
+        className="flex flex-col sm:flex-row items-center justify-between gap-4"
         style={{
-          height: '63px',
           paddingTop: '12px',
         }}
       >
         <span
+          className="text-sm text-gray-700 order-2 sm:order-1"
           style={{
             fontFamily: 'Inter, sans-serif',
-            fontSize: '14px',
-            lineHeight: '20px',
-            color: '#374151',
           }}
         >
           Showing <span style={{ fontWeight: 500 }}>{filteredTasks.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0}</span> to{' '}
@@ -1192,7 +1261,7 @@ export function TasksTable({ showClientColumn, baseUrl }: TasksTableProps) {
           <span style={{ fontWeight: 500 }}>{filteredTasks.length}</span> results
         </span>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 order-1 sm:order-2">
           {/* Previous Button */}
           <button
             onClick={handlePrevious}

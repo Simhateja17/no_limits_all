@@ -150,12 +150,13 @@ export function BulkOperationsPanel({
         boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.05)',
         padding: '16px 20px',
         zIndex: 40,
-        minWidth: '600px',
+        width: 'calc(100vw - 40px)',
+        maxWidth: '600px',
       }}
     >
       {/* Main Panel */}
       {!activeOperation && !result && (
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
           <div className="flex items-center gap-3">
             <span
               style={{
@@ -492,7 +493,7 @@ export function BulkOperationsPanel({
       {result && (
         <div>
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
               {result.success ? (
                 <CheckCircle size={20} color="#15803D" />
               ) : (

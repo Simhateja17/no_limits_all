@@ -24,6 +24,23 @@ interface Order {
   status: OrderStatus;
 }
 
+// Custom hook to detect screen size
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkIsMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    checkIsMobile();
+    window.addEventListener('resize', checkIsMobile);
+    return () => window.removeEventListener('resize', checkIsMobile);
+  }, []);
+
+  return isMobile;
+}
+
 // Helper function to map backend status to frontend status
 const mapBackendStatusToFrontend = (backendStatus: string): OrderStatus => {
   switch (backendStatus) {
@@ -64,7 +81,7 @@ interface OrdersTableProps {
 }
 
 // Status tag component - needs translation function
-const StatusTag = ({ status, t }: { status: OrderStatus; t: (key: string) => string }) => {
+const StatusTag = ({ status, t, compact = false }: { status: OrderStatus; t: (key: string) => string; compact?: boolean }) => {
   const getStatusConfig = () => {
     switch (status) {
       case 'success':
@@ -102,13 +119,13 @@ const StatusTag = ({ status, t }: { status: OrderStatus; t: (key: string) => str
       style={{
         display: 'inline-flex',
         alignItems: 'center',
-        gap: '8px',
-        padding: '6px 14px',
+        gap: compact ? '6px' : '8px',
+        padding: compact ? '4px 10px' : '6px 14px',
         borderRadius: '9999px',
         backgroundColor: '#FFFFFF',
         border: '1px solid #E5E7EB',
         fontFamily: 'Inter, sans-serif',
-        fontSize: '14px',
+        fontSize: compact ? '12px' : '14px',
         fontWeight: 400,
         color: '#111827',
         whiteSpace: 'nowrap',
@@ -116,14 +133,65 @@ const StatusTag = ({ status, t }: { status: OrderStatus; t: (key: string) => str
     >
       <span
         style={{
-          width: '8px',
-          height: '8px',
+          width: compact ? '6px' : '8px',
+          height: compact ? '6px' : '8px',
           borderRadius: '50%',
           backgroundColor: config.dotColor,
         }}
       />
       {config.label}
     </span>
+  );
+};
+
+// Mobile Order Card Component
+const OrderCard = ({ 
+  order, 
+  showClientColumn, 
+  formatOrderDate, 
+  onClick, 
+  t 
+}: { 
+  order: Order; 
+  showClientColumn: boolean; 
+  formatOrderDate: (date: Date) => string; 
+  onClick: () => void;
+  t: (key: string) => string;
+}) => {
+  return (
+    <div
+      onClick={onClick}
+      className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+    >
+      <div className="flex items-start justify-between mb-3">
+        <div>
+          <p className="text-sm font-medium text-gray-900">#{order.orderId}</p>
+          <p className="text-xs text-gray-500 mt-0.5">{formatOrderDate(order.orderDate)}</p>
+        </div>
+        <StatusTag status={order.status} t={t} compact />
+      </div>
+      
+      <div className="grid grid-cols-2 gap-2 text-sm">
+        {showClientColumn && (
+          <div>
+            <span className="text-gray-500 text-xs">{t('client')}</span>
+            <p className="text-gray-700 truncate">{order.client}</p>
+          </div>
+        )}
+        <div>
+          <span className="text-gray-500 text-xs">{t('quantity')}</span>
+          <p className="text-gray-700">{order.quantity}</p>
+        </div>
+        <div>
+          <span className="text-gray-500 text-xs">{t('method')}</span>
+          <p className="text-gray-700 truncate">{order.method}</p>
+        </div>
+        <div>
+          <span className="text-gray-500 text-xs">{t('weight')}</span>
+          <p className="text-gray-700">{order.weight}</p>
+        </div>
+      </div>
+    </div>
   );
 };
 
@@ -137,6 +205,7 @@ export function OrdersTable({ showClientColumn, basePath = '/admin/orders' }: Or
   const t = useTranslations('orders');
   const tCommon = useTranslations('common');
   const locale = useLocale();
+  const isMobile = useIsMobile();
 
   // State for API data
   const [orders, setOrders] = useState<Order[]>([]);
@@ -304,10 +373,28 @@ export function OrdersTable({ showClientColumn, basePath = '/admin/orders' }: Or
     <div className="w-full flex flex-col" style={{ gap: 'clamp(16px, 1.76vw, 24px)' }}>
       {/* Header with Tabs and Create Button */}
       <div className="flex flex-col w-full">
-        <div className="flex items-end justify-between w-full">
-        {/* Tabs */}
+        <div className="flex flex-col md:flex-row md:items-end md:justify-between w-full gap-4">
+        
+        {/* Mobile: Tab Dropdown Selector */}
+        <div className="md:hidden w-full">
+          <select
+            value={activeTab}
+            onChange={(e) => { setActiveTab(e.target.value as OrderTabType); setCurrentPage(1); }}
+            className="w-full h-10 px-3 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#003450]/20"
+          >
+            <option value="all">{t('allOrders')} ({allCount})</option>
+            <option value="inStock">{t('inStock')} ({inStockCount})</option>
+            <option value="outOfStock">{t('outOfStock')} ({outOfStockCount})</option>
+            <option value="errors">{t('errors')} ({errorsCount})</option>
+            <option value="partiallyFulfilled">{t('partiallyFulfilled')} ({partiallyFulfilledCount})</option>
+            <option value="cancelled">{t('cancelled')}</option>
+            <option value="sent">{t('sent')}</option>
+          </select>
+        </div>
+
+        {/* Desktop: Horizontal Tabs */}
         <div
-          className="flex items-end"
+          className="hidden md:flex items-end overflow-x-auto scrollbar-hide"
           style={{
             gap: 'clamp(16px, 1.76vw, 24px)',
           }}
@@ -554,8 +641,9 @@ export function OrdersTable({ showClientColumn, basePath = '/admin/orders' }: Or
         {/* Create Order Button */}
         <button
           onClick={() => router.push(`${basePath}/create`)}
+          className="w-full md:w-auto"
           style={{
-            height: 'clamp(32px, 2.8vw, 38px)',
+            height: 'clamp(38px, 2.8vw, 38px)',
             borderRadius: '6px',
             paddingTop: 'clamp(7px, 0.66vw, 9px)',
             paddingRight: 'clamp(13px, 1.25vw, 17px)',
@@ -587,8 +675,9 @@ export function OrdersTable({ showClientColumn, basePath = '/admin/orders' }: Or
         </button>
       </div>
 
-      {/* Full-width horizontal line below tabs */}
+      {/* Full-width horizontal line below tabs - hidden on mobile */}
       <div
+        className="hidden md:block"
         style={{
           width: '100%',
           height: '1px',
@@ -599,10 +688,10 @@ export function OrdersTable({ showClientColumn, basePath = '/admin/orders' }: Or
       </div>
 
       {/* Filter and Search Row */}
-      <div className="flex items-end gap-6 flex-wrap">
+      <div className="flex flex-col md:flex-row md:items-end gap-4 md:gap-6">
         {/* Filter by Customer - Only show for admin/employee view */}
         {showClientColumn && (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 w-full md:w-auto">
           <label
             style={{
               fontFamily: 'Inter, sans-serif',
@@ -619,8 +708,9 @@ export function OrdersTable({ showClientColumn, basePath = '/admin/orders' }: Or
               value={customerFilter}
               onChange={(e) => { setCustomerFilter(e.target.value); setCurrentPage(1); }}
               disabled={clientsLoading}
+              className="w-full md:w-auto"
               style={{
-                width: 'clamp(200px, 23.5vw, 320px)',
+                minWidth: '200px',
                 maxWidth: '100%',
                 height: '38px',
                 borderRadius: '6px',
@@ -667,7 +757,7 @@ export function OrdersTable({ showClientColumn, basePath = '/admin/orders' }: Or
         )}
 
         {/* Search */}
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 w-full md:w-auto">
           <label
             style={{
               fontFamily: 'Inter, sans-serif',
@@ -684,8 +774,9 @@ export function OrdersTable({ showClientColumn, basePath = '/admin/orders' }: Or
             placeholder={tCommon('search')}
             value={searchQuery}
             onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+            className="w-full md:w-auto"
             style={{
-              width: 'clamp(200px, 23.5vw, 320px)',
+              minWidth: '200px',
               maxWidth: '100%',
               height: '38px',
               borderRadius: '6px',
@@ -703,7 +794,36 @@ export function OrdersTable({ showClientColumn, basePath = '/admin/orders' }: Or
         </div>
       </div>
 
-      {/* Orders Table */}
+      {/* Mobile Card View */}
+      {isMobile ? (
+        <div className="flex flex-col gap-3">
+          {paginatedOrders.map((order) => (
+            <OrderCard
+              key={order.id}
+              order={order}
+              showClientColumn={showClientColumn}
+              formatOrderDate={formatOrderDate}
+              onClick={() => handleOrderClick(order.id)}
+              t={t}
+            />
+          ))}
+          
+          {/* Empty State */}
+          {paginatedOrders.length === 0 && (
+            <div
+              className="bg-white rounded-lg border border-gray-200 p-8 text-center"
+              style={{
+                color: '#6B7280',
+                fontFamily: 'Inter, sans-serif',
+                fontSize: '14px',
+              }}
+            >
+              No orders found
+            </div>
+          )}
+        </div>
+      ) : (
+      /* Desktop Table View */
       <div
         style={{
           width: '100%',
@@ -933,19 +1053,20 @@ export function OrdersTable({ showClientColumn, basePath = '/admin/orders' }: Or
           </div>
         )}
       </div>
+      )}
 
       {/* Pagination */}
       <div
-        className="flex items-center justify-between flex-wrap gap-4"
+        className="flex flex-col sm:flex-row items-center justify-between gap-4"
         style={{
           minHeight: '63px',
           paddingTop: '12px',
         }}
       >
         <span
+          className="text-sm text-center sm:text-left"
           style={{
             fontFamily: 'Inter, sans-serif',
-            fontSize: 'clamp(12px, 1vw, 14px)',
             lineHeight: '20px',
             color: '#374151',
           }}
@@ -960,6 +1081,7 @@ export function OrdersTable({ showClientColumn, basePath = '/admin/orders' }: Or
           <button
             onClick={handlePrevious}
             disabled={currentPage === 1}
+            className="flex-1 sm:flex-none"
             style={{
               minWidth: '92px',
               height: '38px',
@@ -992,6 +1114,7 @@ export function OrdersTable({ showClientColumn, basePath = '/admin/orders' }: Or
           <button
             onClick={handleNext}
             disabled={currentPage >= totalPages}
+            className="flex-1 sm:flex-none"
             style={{
               minWidth: '92px',
               height: '38px',

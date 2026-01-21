@@ -12,6 +12,23 @@ import type { Product as ApiProduct } from '@/lib/data-api';
 // Tab type
 type TabType = 'all' | 'outOfStock' | 'missingData';
 
+// Custom hook to detect screen size
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkIsMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    checkIsMobile();
+    window.addEventListener('resize', checkIsMobile);
+    return () => window.removeEventListener('resize', checkIsMobile);
+  }, []);
+
+  return isMobile;
+}
+
 // Product interface
 interface Product {
   id: string;
@@ -36,6 +53,55 @@ interface ProductsTableProps {
   baseUrl: string; // Base URL for product details navigation (e.g., '/admin/products' or '/employee/products')
 }
 
+// Mobile Product Card Component
+const ProductCard = ({ 
+  product, 
+  showClientColumn, 
+  onClick, 
+  t 
+}: { 
+  product: Product; 
+  showClientColumn: boolean; 
+  onClick: () => void;
+  t: (key: string) => string;
+}) => {
+  return (
+    <div
+      onClick={onClick}
+      className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+    >
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-gray-900 truncate">{product.productName || <span className="text-red-500 italic">Missing</span>}</p>
+          <p className="text-xs text-gray-500 mt-0.5">ID: {product.productId}</p>
+        </div>
+      </div>
+      
+      <div className="grid grid-cols-3 gap-2 text-sm">
+        <div>
+          <span className="text-gray-500 text-xs">{t('available')}</span>
+          <p className={`font-medium ${product.available === 0 ? 'text-red-500' : 'text-gray-700'}`}>{product.available}</p>
+        </div>
+        <div>
+          <span className="text-gray-500 text-xs">{t('reserved')}</span>
+          <p className="text-gray-700">{product.reserved}</p>
+        </div>
+        <div>
+          <span className="text-gray-500 text-xs">{t('announced')}</span>
+          <p className="text-gray-700">{product.announced}</p>
+        </div>
+      </div>
+      
+      {showClientColumn && (
+        <div className="mt-3 pt-3 border-t border-gray-100">
+          <span className="text-gray-500 text-xs">{t('client')}</span>
+          <p className="text-gray-700 text-sm truncate">{product.client || <span className="text-red-500 italic">Missing</span>}</p>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export function ProductsTable({ showClientColumn, baseUrl }: ProductsTableProps) {
   const router = useRouter();
   const { user } = useAuthStore();
@@ -50,6 +116,7 @@ export function ProductsTable({ showClientColumn, baseUrl }: ProductsTableProps)
   const itemsPerPage = 10;
   const t = useTranslations('products');
   const tCommon = useTranslations('common');
+  const isMobile = useIsMobile();
 
   // Fetch real clients for admin/employee filter
   const { clients, loading: clientsLoading } = useClients();
@@ -199,10 +266,24 @@ export function ProductsTable({ showClientColumn, baseUrl }: ProductsTableProps)
     <div className="w-full flex flex-col" style={{ gap: 'clamp(16px, 1.76vw, 24px)' }}>
       {/* Header with Tabs and Create Button */}
       <div className="flex flex-col w-full">
-        <div className="flex items-end justify-between w-full">
-        {/* Tabs */}
+        <div className="flex flex-col md:flex-row md:items-end md:justify-between w-full gap-4">
+        
+        {/* Mobile: Tab Dropdown Selector */}
+        <div className="md:hidden w-full">
+          <select
+            value={activeTab}
+            onChange={(e) => { setActiveTab(e.target.value as TabType); setCurrentPage(1); }}
+            className="w-full h-10 px-3 rounded-lg border border-gray-300 bg-white text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#003450]/20"
+          >
+            <option value="all">{t('allProducts')} ({allCount})</option>
+            <option value="outOfStock">{t('outOfStock')} ({outOfStockCount})</option>
+            <option value="missingData">{t('missingData')} ({missingDataCount})</option>
+          </select>
+        </div>
+
+        {/* Desktop: Horizontal Tabs */}
         <div
-          className="flex items-end"
+          className="hidden md:flex items-end"
           style={{
             gap: 'clamp(16px, 1.76vw, 24px)',
           }}
@@ -325,6 +406,7 @@ export function ProductsTable({ showClientColumn, baseUrl }: ProductsTableProps)
         {/* Create Product Button */}
         <button
           onClick={() => router.push(`${baseUrl}/create`)}
+          className="w-full md:w-auto"
           style={{
             height: 'clamp(32px, 2.8vw, 38px)',
             borderRadius: '6px',
@@ -358,8 +440,9 @@ export function ProductsTable({ showClientColumn, baseUrl }: ProductsTableProps)
         </button>
       </div>
 
-      {/* Full-width horizontal line below tabs */}
+      {/* Full-width horizontal line below tabs - hidden on mobile */}
       <div
+        className="hidden md:block"
         style={{
           width: '100%',
           height: '1px',
@@ -370,14 +453,14 @@ export function ProductsTable({ showClientColumn, baseUrl }: ProductsTableProps)
       </div>
 
       {/* Filter and Search Row */}
-      <div className="flex items-end gap-6 flex-wrap">
+      <div className="flex flex-col md:flex-row md:items-end gap-4 md:gap-6">
         {/* Filter by Customer (admin/employee) or Channels (client) */}
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 w-full md:w-auto">
           <label
             style={{
               fontFamily: 'Inter, sans-serif',
               fontWeight: 500,
-              fontSize: '14px',
+              fontSize: 'clamp(12px, 1vw, 14px)',
               lineHeight: '20px',
               color: '#374151',
             }}
@@ -389,8 +472,9 @@ export function ProductsTable({ showClientColumn, baseUrl }: ProductsTableProps)
               value={customerFilter}
               onChange={(e) => { setCustomerFilter(e.target.value); setCurrentPage(1); }}
               disabled={showClientColumn ? clientsLoading : false}
+              className="w-full md:w-auto"
               style={{
-                width: '320px',
+                minWidth: '200px',
                 maxWidth: '100%',
                 height: '38px',
                 borderRadius: '6px',
@@ -401,7 +485,7 @@ export function ProductsTable({ showClientColumn, baseUrl }: ProductsTableProps)
                 boxShadow: '0px 1px 2px 0px rgba(0, 0, 0, 0.05)',
                 fontFamily: 'Inter, sans-serif',
                 fontWeight: 500,
-                fontSize: '14px',
+                fontSize: 'clamp(12px, 1vw, 14px)',
                 lineHeight: '20px',
                 color: '#374151',
                 appearance: 'none',
@@ -443,12 +527,12 @@ export function ProductsTable({ showClientColumn, baseUrl }: ProductsTableProps)
         </div>
 
         {/* Search */}
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 w-full md:w-auto">
           <label
             style={{
               fontFamily: 'Inter, sans-serif',
               fontWeight: 500,
-              fontSize: '14px',
+              fontSize: 'clamp(12px, 1vw, 14px)',
               lineHeight: '20px',
               color: '#374151',
             }}
@@ -460,8 +544,9 @@ export function ProductsTable({ showClientColumn, baseUrl }: ProductsTableProps)
             placeholder={tCommon('search')}
             value={searchQuery}
             onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
+            className="w-full md:w-auto"
             style={{
-              width: '320px',
+              minWidth: '200px',
               maxWidth: '100%',
               height: '38px',
               borderRadius: '6px',
@@ -471,7 +556,7 @@ export function ProductsTable({ showClientColumn, baseUrl }: ProductsTableProps)
               boxShadow: '0px 1px 2px 0px rgba(0, 0, 0, 0.05)',
               fontFamily: 'Inter, sans-serif',
               fontWeight: 500,
-              fontSize: '14px',
+              fontSize: 'clamp(12px, 1vw, 14px)',
               lineHeight: '20px',
               color: '#374151',
             }}
@@ -495,7 +580,35 @@ export function ProductsTable({ showClientColumn, baseUrl }: ProductsTableProps)
         )}
       </div>
 
-      {/* Products Table */}
+      {/* Mobile Card View */}
+      {isMobile ? (
+        <div className="flex flex-col gap-3">
+          {paginatedProducts.map((product) => (
+            <ProductCard
+              key={product.id}
+              product={product}
+              showClientColumn={showClientColumn}
+              onClick={() => handleProductClick(product.productId)}
+              t={t}
+            />
+          ))}
+          
+          {/* Empty State */}
+          {paginatedProducts.length === 0 && (
+            <div
+              className="bg-white rounded-lg border border-gray-200 p-8 text-center"
+              style={{
+                color: '#6B7280',
+                fontFamily: 'Inter, sans-serif',
+                fontSize: '14px',
+              }}
+            >
+              No products found
+            </div>
+          )}
+        </div>
+      ) : (
+      /* Desktop Table View */
       <div
         style={{
           width: '100%',
@@ -709,19 +822,20 @@ export function ProductsTable({ showClientColumn, baseUrl }: ProductsTableProps)
           </div>
         )}
       </div>
+      )}
 
       {/* Pagination */}
       <div
-        className="flex items-center justify-between"
+        className="flex flex-col sm:flex-row items-center justify-between gap-4"
         style={{
-          height: '63px',
+          minHeight: '63px',
           paddingTop: '12px',
         }}
       >
         <span
+          className="text-sm text-center sm:text-left"
           style={{
             fontFamily: 'Inter, sans-serif',
-            fontSize: '14px',
             lineHeight: '20px',
             color: '#374151',
           }}
@@ -736,6 +850,7 @@ export function ProductsTable({ showClientColumn, baseUrl }: ProductsTableProps)
           <button
             onClick={handlePrevious}
             disabled={currentPage === 1}
+            className="flex-1 sm:flex-none"
             style={{
               minWidth: '92px',
               height: '38px',
@@ -755,7 +870,7 @@ export function ProductsTable({ showClientColumn, baseUrl }: ProductsTableProps)
               style={{
                 fontFamily: 'Inter, sans-serif',
                 fontWeight: 500,
-                fontSize: '14px',
+                fontSize: 'clamp(12px, 1vw, 14px)',
                 lineHeight: '20px',
                 color: '#374151',
               }}
@@ -768,6 +883,7 @@ export function ProductsTable({ showClientColumn, baseUrl }: ProductsTableProps)
           <button
             onClick={handleNext}
             disabled={currentPage >= totalPages}
+            className="flex-1 sm:flex-none"
             style={{
               minWidth: '92px',
               height: '38px',
@@ -787,7 +903,7 @@ export function ProductsTable({ showClientColumn, baseUrl }: ProductsTableProps)
               style={{
                 fontFamily: 'Inter, sans-serif',
                 fontWeight: 500,
-                fontSize: '14px',
+                fontSize: 'clamp(12px, 1vw, 14px)',
                 lineHeight: '20px',
                 color: '#374151',
               }}

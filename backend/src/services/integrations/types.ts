@@ -260,6 +260,7 @@ export interface JTLOutbound {
   merchantOutboundNumber: string;
   warehouseId?: string;
   fulfillerId?: string;
+  currency?: string; // ISO 4217 currency code (EUR, USD, etc.)
   customerOrderNumber?: string;
   orderDate?: string;
   externalNumber?: string;
@@ -316,7 +317,7 @@ export interface JTLAddress {
   houseNumber?: string;
   zip: string;
   city: string;
-  countryCode: string;
+  country: string; // JTL API expects 'country' field (ISO country code like 'DE', 'US')
   stateCode?: string;
   email?: string;
   phone?: string;

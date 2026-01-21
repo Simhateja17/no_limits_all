@@ -84,7 +84,7 @@ export function CreateTaskModal({
           top: '50%',
           left: '50%',
           transform: 'translate(-50%, -50%)',
-          width: 'clamp(360px, 37.7vw, 512px)',
+          width: 'min(90vw, 512px)',
           maxHeight: '90vh',
           borderRadius: '8px',
           padding: 'clamp(16px, 1.77vw, 24px)',

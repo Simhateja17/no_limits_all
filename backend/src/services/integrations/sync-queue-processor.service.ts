@@ -530,7 +530,7 @@ export class SyncQueueProcessor {
         fulfillerId: jtlConfig.fulfillerId,
         warehouseId: jtlConfig.warehouseId,
         environment: jtlConfig.environment as 'sandbox' | 'production',
-      });
+      }, this.prisma, jtlConfig.clientId_fk);
 
       // Transform order to JTL outbound format
       const outboundItems = order.items.map((item: any) => ({
@@ -553,7 +553,7 @@ export class SyncQueueProcessor {
           addition: order.shippingAddress2 || undefined,
           city: order.shippingCity || 'Unknown',
           zip: order.shippingZip || '',
-          countryCode: (order.shippingCountryCode || order.shippingCountry || 'DE').substring(0, 2).toUpperCase(),
+          country: (order.shippingCountryCode || order.shippingCountry || 'DE').substring(0, 2).toUpperCase(),
           email: order.customerEmail || undefined,
           phone: order.customerPhone || undefined,
         },
@@ -946,7 +946,7 @@ export class JTLPollingService {
         fulfillerId: config.fulfillerId,
         warehouseId: config.warehouseId,
         environment: config.environment as 'sandbox' | 'production',
-      });
+      }, this.prisma, config.clientId_fk);
 
       // Get stock level updates
       const stockLevels = await jtlService.getStockLevels({
