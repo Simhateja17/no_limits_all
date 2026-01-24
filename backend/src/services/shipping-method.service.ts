@@ -58,17 +58,43 @@ export class ShippingMethodService {
     error?: string;
   }> {
     try {
+      console.log('[ShippingMethodService] Starting sync from JTL FFN');
+      console.log('[ShippingMethodService] FulfillerId filter:', fulfillerId || 'NONE (fetching all)');
+
       // Fetch shipping methods from JTL FFN
       // If fulfillerId is provided, filter by that fulfiller
       const response = await jtlService.getShippingMethods(
         fulfillerId ? { fulfillerId } : {}
       );
 
+      console.log('[ShippingMethodService] JTL API response success:', response.success);
+      console.log('[ShippingMethodService] JTL API response error:', response.error || 'none');
+      console.log('[ShippingMethodService] JTL API data count:', response.data?.length || 0);
+
+      // If no methods found with fulfillerId filter, try without filter
+      if (response.success && (!response.data || response.data.length === 0) && fulfillerId) {
+        console.log('[ShippingMethodService] No methods found with fulfillerId filter, trying without filter...');
+        const allMethodsResponse = await jtlService.getShippingMethods({});
+        console.log('[ShippingMethodService] All methods (without filter) count:', allMethodsResponse.data?.length || 0);
+        if (allMethodsResponse.data && allMethodsResponse.data.length > 0) {
+          console.log('[ShippingMethodService] Available fulfillerIds in all methods:',
+            [...new Set(allMethodsResponse.data.map(m => m.fulfillerId))].join(', ')
+          );
+          // Use all methods if no filter was effective
+          response.data = allMethodsResponse.data;
+        }
+      }
+
       if (!response.success || !response.data) {
+        console.error('[ShippingMethodService] Failed to fetch shipping methods from JTL:', response.error);
         return { success: false, synced: 0, error: response.error || 'Failed to fetch shipping methods' };
       }
 
       const jtlMethods = response.data as JTLShippingMethod[];
+      console.log('[ShippingMethodService] JTL methods to sync:', jtlMethods.length);
+      if (jtlMethods.length > 0) {
+        console.log('[ShippingMethodService] First method sample:', JSON.stringify(jtlMethods[0], null, 2));
+      }
       let syncedCount = 0;
 
       for (const jtlMethod of jtlMethods) {
@@ -199,13 +225,37 @@ export class ShippingMethodService {
         };
       }
 
-      // Step 4: No fallback - this is a critical mismatch, order should be held
+      // Step 4: Auto-fallback - If there's only one active shipping method for this client, use it
+      // This prevents orders from being held when the user hasn't configured defaults yet
+      const activeShippingMethods = await this.prisma.shippingMethod.findMany({
+        where: {
+          isActive: true,
+          jtlShippingMethodId: { not: null },
+        },
+        take: 2, // Only need to know if there's 1 or more
+      });
+
+      if (activeShippingMethods.length === 1) {
+        const autoMethod = activeShippingMethods[0];
+        console.log(`[ShippingMethodService] Auto-fallback: Only one shipping method available, using "${autoMethod.name}" (${autoMethod.jtlShippingMethodId})`);
+        return {
+          success: true,
+          jtlShippingMethodId: autoMethod.jtlShippingMethodId!,
+          shippingMethodName: autoMethod.name,
+          usedFallback: true,
+          mismatch: false, // Not a mismatch - auto-selected because it's the only option
+          shouldHoldOrder: false,
+        };
+      }
+
+      // Step 5: No fallback - this is a critical mismatch, order should be held
       console.warn(`[ShippingMethodService] CRITICAL: No shipping method mapping or fallback for client ${clientId}, shipping: ${channelShipping.title || channelShipping.code}`);
+      console.warn(`[ShippingMethodService] Available active shipping methods: ${activeShippingMethods.length}. Please configure a default shipping method.`);
       return {
         success: false,
         usedFallback: false,
         mismatch: true,
-        mismatchReason: `No mapping found for shipping method "${channelShipping.title || channelShipping.code}" and no default shipping method configured.`,
+        mismatchReason: `No mapping found for shipping method "${channelShipping.title || channelShipping.code}" and no default shipping method configured. ${activeShippingMethods.length} shipping methods available - please set a default.`,
         shouldHoldOrder: true,
       };
     } catch (error: any) {

@@ -1,12 +1,12 @@
 'use client';
 
 import { DashboardLayout } from '@/components/layout';
-import { ReturnsTable } from '@/components/returns';
+import { CreateReturn } from '@/components/returns';
 import { useAuthStore } from '@/lib/store';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
-export default function AdminReturnsPage() {
+export default function AdminCreateReturnPage() {
   const { user, isAuthenticated } = useAuthStore();
   const router = useRouter();
 
@@ -20,13 +20,10 @@ export default function AdminReturnsPage() {
     return null;
   }
 
-  // Show client column for SUPER_ADMIN and ADMIN (superadmin and warehouse labor view)
-  const showClientColumn = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN';
-
   return (
     <DashboardLayout>
       <div className="w-full px-[5.2%] py-8">
-        <ReturnsTable showClientColumn={showClientColumn} canCreateReturn={true} />
+        <CreateReturn backUrl="/admin/returns" />
       </div>
     </DashboardLayout>
   );

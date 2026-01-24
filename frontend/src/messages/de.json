@@ -47,7 +47,14 @@
     "detailsOfReturn": "Details der Retoure",
     "add": "Hinzufügen",
     "remove": "Entfernen",
-    "finish": "Fertig"
+    "finish": "Fertig",
+    "saveChanges": "Änderungen speichern",
+    "changedMind": "Meinung geändert",
+    "other": "Sonstiges",
+    "addItem": "Artikel hinzufügen",
+    "warehouseNotes": "Lagernotizen",
+    "email": "E-Mail",
+    "saving": "Speichern..."
   },
   "login": {
     "storeOwner": "Fulfillment Kunde",
@@ -206,7 +213,8 @@
     "orderNotesDescription": "In diesem Bereich werden zusätzliche Informationen aus dem Auftrag des jeweiligen Channels angezeigt – zum Beispiel aus Shopify, wenn der Kunde dort eine Notiz oder besondere Hinweise zum Auftrag hinterlegt hat. Darüber hinaus können hier weitere Informationen übermittelt werden, um den Vorgang weiter zu präzisieren oder interne Hinweise für die Bearbeitung zu hinterlegen.",
     "createOrderDescription": "Hinweis: Klicken Sie auf \"Auftrag erstellen\", um den neuen Auftrag mit den eingegebenen Daten anzulegen.",
     "noProducts": "Keine Produkte hinzugefügt.",
-    "noAddressProvided": "Keine Adresse angegeben."
+    "noAddressProvided": "Keine Adresse angegeben.",
+    "editOrder": "Auftrag bearbeiten"
   },
   "products": {
     "title": "Produkte",
@@ -350,7 +358,15 @@
     "acceptable": "Akzeptabel",
     "disposed": "Entsorgt",
     "bookedInAgain": "Wieder eingebucht",
-    "returnImages": "Retourenbilder"
+    "returnImages": "Retourenbilder",
+    "createReturn": "Retoure erstellen",
+    "enterOrderId": "Bestell-ID eingeben (optional)",
+    "enterCustomerName": "Kundennamen eingeben",
+    "enterCustomerEmail": "Kunden-E-Mail eingeben",
+    "enterReturnReason": "Retourengrund eingeben",
+    "enterNotes": "Notizen eingeben",
+    "enterWarehouseNotes": "Lagernotizen eingeben",
+    "atLeastOneItemRequired": "Mindestens ein Artikel mit SKU oder Produktname ist erforderlich"
   },
   "chat": {
     "title": "Chat",
@@ -386,7 +402,12 @@
     "orderProcessing": "Auftragsabwicklung",
     "inventoryCheck": "Bestandsprüfung",
     "noTasksFound": "Keine Aufgaben gefunden",
-    "returns": "Retouren"
+    "returns": "Retouren",
+    "chatContext": "Chat-Kontext",
+    "noChatContext": "Kein Chat-Kontext für diese Aufgabe verfügbar",
+    "markAsClosed": "Als geschlossen markieren",
+    "reopenTask": "Aufgabe wieder öffnen",
+    "taskDetailsComingSoon": "Aufgabendetails kommen bald"
   },
   "channels": {
     "title": "Vertriebskanäle",

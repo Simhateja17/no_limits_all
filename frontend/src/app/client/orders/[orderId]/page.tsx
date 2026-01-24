@@ -1637,51 +1637,6 @@ export default function ClientOrderDetailPage() {
                     />
                   </button>
                 </div>
-
-                {/* Save Button - appears when edit mode is enabled */}
-                {editOrderEnabled && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {saveError && (
-                      <div style={{ color: '#EF4444', fontSize: '14px', fontFamily: 'Inter, sans-serif' }}>
-                        {saveError}
-                      </div>
-                    )}
-                    {jtlSyncStatus && !jtlSyncStatus.success && (
-                      <div style={{ color: '#F59E0B', fontSize: '12px', fontFamily: 'Inter, sans-serif' }}>
-                        JTL Sync Warning: {jtlSyncStatus.error}
-                      </div>
-                    )}
-                    <button
-                      onClick={handleSaveOrder}
-                      disabled={isSaving}
-                      style={{
-                        width: '100%',
-                        height: '42px',
-                        borderRadius: '6px',
-                        padding: '10px 20px',
-                        backgroundColor: isSaving ? '#6B7280' : '#003450',
-                        border: 'none',
-                        cursor: isSaving ? 'not-allowed' : 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '8px',
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontFamily: 'Inter, sans-serif',
-                          fontWeight: 500,
-                          fontSize: 'clamp(13px, 1.03vw, 14px)',
-                          lineHeight: '20px',
-                          color: '#FFFFFF',
-                        }}
-                      >
-                        {isSaving ? (tCommon('saving') || 'Saving...') : (tCommon('saveChanges') || 'Save Changes')}
-                      </span>
-                    </button>
-                  </div>
-                )}
               </div>
 
               {/* Order Notes Box */}
@@ -1724,7 +1679,6 @@ export default function ClientOrderDetailPage() {
                   value={orderNotes}
                   onChange={(e) => setOrderNotes(e.target.value)}
                   disabled={!editOrderEnabled}
-                  placeholder="Please double check condition of the products before you send it out"
                   style={{
                     width: '100%',
                     minHeight: 'clamp(70px, 5.9vw, 80px)',

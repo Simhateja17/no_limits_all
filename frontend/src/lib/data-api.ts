@@ -178,22 +178,25 @@ export interface Task {
   priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
   type: 'INTERNAL_WAREHOUSE' | 'CLIENT_COMMUNICATION' | 'ORDER_PROCESSING' | 'RETURNS' | 'INVENTORY_CHECK' | 'OTHER';
   dueDate: string | null;
-  assignedToId: string | null;
-  assignedTo: {
+  completedAt: string | null;
+  clientId: string | null;
+  client: {
+    id: string;
+    companyName: string;
+    name: string;
+  } | null;
+  assigneeId: string | null;
+  assignee: {
     id: string;
     name: string;
     email: string;
   } | null;
-  client: {
-    companyName: string;
+  creatorId: string;
+  creator: {
+    id: string;
     name: string;
+    email: string;
   };
-  order: {
-    orderId: string;
-  } | null;
-  return: {
-    returnId: string;
-  } | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -201,14 +204,13 @@ export interface Task {
 export interface CreateTaskInput {
   title: string;
   description?: string;
-  type: 'INTERNAL_WAREHOUSE' | 'CLIENT_COMMUNICATION' | 'ORDER_PROCESSING' | 'RETURNS' | 'INVENTORY_CHECK' | 'OTHER';
-  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+  type?: 'INTERNAL_WAREHOUSE' | 'CLIENT_COMMUNICATION' | 'ORDER_PROCESSING' | 'RETURNS' | 'INVENTORY_CHECK' | 'OTHER';
+  priority?: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
   status?: 'OPEN' | 'IN_PROGRESS' | 'COMPLETED' | 'CLOSED' | 'CANCELLED';
   dueDate?: string;
-  assignedToId?: string;
+  assigneeId?: string;
   clientId?: string;
-  orderId?: string;
-  returnId?: string;
+  notifyCustomer?: boolean;
 }
 
 // Update input types
@@ -284,6 +286,22 @@ export interface UpdateReturnInput {
     damagedQuantity?: number;
     defectiveQuantity?: number;
     notes?: string;
+  }>;
+}
+
+export interface CreateReturnInput {
+  orderId?: string;
+  reason?: string;
+  reasonCategory?: string;
+  customerName?: string;
+  customerEmail?: string;
+  notes?: string;
+  warehouseNotes?: string;
+  items: Array<{
+    sku?: string;
+    productName?: string;
+    quantity: number;
+    condition: 'GOOD' | 'ACCEPTABLE' | 'DAMAGED' | 'DEFECTIVE';
   }>;
 }
 
@@ -426,6 +444,11 @@ export const dataApi = {
       changedFields: response.data.changedFields || [],
       jtlSync: response.data.jtlSync || null,
     };
+  },
+
+  async createReturn(input: CreateReturnInput): Promise<Return> {
+    const response = await api.post('/data/returns', input);
+    return response.data.data;
   },
 
   async deleteOrder(id: string): Promise<{ message: string }> {

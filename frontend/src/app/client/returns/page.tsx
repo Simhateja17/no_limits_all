@@ -26,7 +26,7 @@ export default function ClientReturnsPage() {
   return (
     <DashboardLayout>
       <div className="w-full px-[5.2%] py-8">
-        <ReturnsTable showClientColumn={showClientColumn} basePath="/client/returns" />
+        <ReturnsTable showClientColumn={showClientColumn} basePath="/client/returns" canCreateReturn={false} />
       </div>
     </DashboardLayout>
   );

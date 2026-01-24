@@ -156,7 +156,7 @@ function ChannelCard({ channel, onSettingsClick, onNameClick, t }: { channel: Ch
                 cursor: 'pointer',
               }}
             >
-              {channel.name} - {channel.type}
+              {channel.name}
             </span>
             <StatusBadge status={channel.status} t={t} />
           </div>
@@ -292,10 +292,10 @@ function ChannelTypeModal({
 }) {
   if (!isOpen) return null;
 
-  const channelTypes: { type: 'Woocommerce' | 'Shopify' | 'Amazon'; label: string; descriptionKey: string; logo?: string }[] = [
-    { type: 'Woocommerce', label: 'Woocommerce', descriptionKey: 'woocommerceDescription', logo: '/WooCommerce-Symbol-1.png' },
-    { type: 'Shopify', label: 'Shopify', descriptionKey: 'shopifyDescription', logo: '/shopify-logo-svg-vector.svg' },
-    { type: 'Amazon', label: 'Amazon', descriptionKey: 'amazonDescription' },
+  const channelTypes: { type: 'Woocommerce' | 'Shopify' | 'Amazon'; label: string; abbrev: string; descriptionKey: string }[] = [
+    { type: 'Woocommerce', label: 'WooCommerce', abbrev: 'Woo', descriptionKey: 'woocommerceDescription' },
+    { type: 'Shopify', label: 'Shopify', abbrev: 'S', descriptionKey: 'shopifyDescription' },
+    { type: 'Amazon', label: 'Amazon', abbrev: 'AMZ', descriptionKey: 'amazonDescription' },
   ];
 
   return (
@@ -407,27 +407,29 @@ function ChannelTypeModal({
                 e.currentTarget.style.borderColor = '#E5E7EB';
               }}
             >
-              {channel.logo && (
-                <div
+              <div
+                style={{
+                  width: 'clamp(32px, 3.14vw, 40px)',
+                  height: 'clamp(32px, 3.14vw, 40px)',
+                  flexShrink: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: '#F3F4F6',
+                  borderRadius: '8px',
+                }}
+              >
+                <span
                   style={{
-                    width: 'clamp(32px, 3.14vw, 40px)',
-                    height: 'clamp(32px, 3.14vw, 40px)',
-                    flexShrink: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    overflow: 'hidden',
+                    fontFamily: 'Inter, sans-serif',
+                    fontWeight: 600,
+                    fontSize: 'clamp(10px, 0.98vw, 14px)',
+                    color: '#374151',
                   }}
                 >
-                  <Image
-                    src={channel.logo}
-                    alt={channel.label}
-                    width={40}
-                    height={40}
-                    style={{ objectFit: 'contain' }}
-                  />
-                </div>
-              )}
+                  {channel.abbrev}
+                </span>
+              </div>
               <div
                 style={{
                   display: 'flex',

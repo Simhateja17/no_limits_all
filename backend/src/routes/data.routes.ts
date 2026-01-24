@@ -96,6 +96,7 @@ router.get('/dashboard/chart', async (req: Request, res: Response) => {
     // Get user
     const user = await prisma.user.findUnique({
       where: { id: userId },
+      include: { client: true },
     });
 
     if (!user) {
@@ -105,12 +106,16 @@ router.get('/dashboard/chart', async (req: Request, res: Response) => {
       });
     }
 
-    // Only admins can access this endpoint
-    if (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN') {
-      return res.status(403).json({
-        success: false,
-        error: 'Only admins can access dashboard chart data',
-      });
+    // Build query filter based on user role
+    let clientFilter: any = {};
+    if (user.role === 'CLIENT') {
+      if (!user.client?.id) {
+        return res.status(403).json({
+          success: false,
+          error: 'Client ID not found',
+        });
+      }
+      clientFilter = { clientId: user.client.id };
     }
 
     // Default date range: last 12 months
@@ -130,6 +135,7 @@ router.get('/dashboard/chart', async (req: Request, res: Response) => {
     // Fetch orders within the date range
     const orders = await prisma.order.findMany({
       where: {
+        ...clientFilter,
         orderDate: {
           gte: startDate,
           lte: endOfMonth,
@@ -179,6 +185,7 @@ router.get('/dashboard/chart', async (req: Request, res: Response) => {
 
     const previousOrders = await prisma.order.findMany({
       where: {
+        ...clientFilter,
         orderDate: {
           gte: previousStartDate,
           lte: previousEndDate,
@@ -248,6 +255,7 @@ router.get('/dashboard/events', async (req: Request, res: Response) => {
     // Get user
     const user = await prisma.user.findUnique({
       where: { id: userId },
+      include: { client: true },
     });
 
     if (!user) {
@@ -257,18 +265,23 @@ router.get('/dashboard/events', async (req: Request, res: Response) => {
       });
     }
 
-    // Only admins can access this endpoint
-    if (user.role !== 'ADMIN' && user.role !== 'SUPER_ADMIN') {
-      return res.status(403).json({
-        success: false,
-        error: 'Only admins can access dashboard events',
-      });
-    }
-
     const eventLimit = Math.min(parseInt(limit as string) || 10, 50);
+
+    // Build query filters based on user role
+    let clientFilter: any = {};
+    if (user.role === 'CLIENT') {
+      if (!user.client?.id) {
+        return res.status(403).json({
+          success: false,
+          error: 'Client ID not found',
+        });
+      }
+      clientFilter = { clientId: user.client.id };
+    }
 
     // Fetch recent returns
     const recentReturns = await prisma.return.findMany({
+      where: clientFilter,
       take: eventLimit,
       orderBy: { createdAt: 'desc' },
       select: {
@@ -286,6 +299,7 @@ router.get('/dashboard/events', async (req: Request, res: Response) => {
 
     // Fetch recent inbounds
     const recentInbounds = await prisma.inboundDelivery.findMany({
+      where: clientFilter,
       take: eventLimit,
       orderBy: { createdAt: 'desc' },
       select: {
@@ -305,6 +319,7 @@ router.get('/dashboard/events', async (req: Request, res: Response) => {
     // Fetch orders needing attention (ERROR status or ON_HOLD)
     const ordersNeedingAttention = await prisma.order.findMany({
       where: {
+        ...clientFilter,
         OR: [
           { status: 'ERROR' },
           { isOnHold: true },
@@ -1227,6 +1242,140 @@ router.get('/returns/:id', async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to fetch return',
+    });
+  }
+});
+
+/**
+ * POST /api/data/returns
+ * Create a new return for the authenticated user's client
+ */
+router.post('/returns', async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).userId;
+    const {
+      orderId,
+      reason,
+      reasonCategory,
+      customerName,
+      customerEmail,
+      notes,
+      warehouseNotes,
+      items,
+    } = req.body;
+
+    // Get user with client relation
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { client: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found',
+      });
+    }
+
+    // Only ADMIN, SUPER_ADMIN, and EMPLOYEE can create returns
+    // CLIENT users cannot create returns
+    if (user.role === 'CLIENT') {
+      return res.status(403).json({
+        success: false,
+        error: 'Clients are not authorized to create returns. Please contact support.',
+      });
+    }
+
+    // Validate items
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'At least one return item is required',
+      });
+    }
+
+    // Validate that at least one item has sku or productName
+    const validItems = items.filter((item: any) => item.sku || item.productName);
+    if (validItems.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'At least one item must have a SKU or product name',
+      });
+    }
+
+    // Generate a unique return ID
+    const returnIdDisplay = `RET-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`;
+
+    // If orderId is provided, try to find the order and get its clientId
+    let orderRecord = null;
+    let clientId: string | null = null;
+    if (orderId) {
+      orderRecord = await prisma.order.findFirst({
+        where: {
+          OR: [
+            { id: orderId },
+            { orderId: orderId },
+            { externalOrderId: orderId },
+          ],
+        },
+      });
+      // If order found, use order's clientId
+      if (orderRecord) {
+        clientId = orderRecord.clientId;
+      }
+    }
+
+    // Create the return with items
+    const returnRecord = await prisma.return.create({
+      data: {
+        returnId: returnIdDisplay,
+        clientId: clientId,
+        orderId: orderRecord?.id || null,
+        externalOrderId: orderId || null,
+        reason: reason || null,
+        reasonCategory: reasonCategory || null,
+        customerName: customerName || null,
+        customerEmail: customerEmail || null,
+        notes: notes || null,
+        warehouseNotes: warehouseNotes || null,
+        status: 'ANNOUNCED',
+        returnOrigin: 'NOLIMITS',
+        syncStatus: 'PENDING',
+        items: {
+          create: validItems.map((item: any) => ({
+            sku: item.sku || null,
+            productName: item.productName || null,
+            quantity: item.quantity || 1,
+            condition: item.condition || 'GOOD',
+            disposition: 'PENDING_DECISION',
+          })),
+        },
+      },
+      include: {
+        client: {
+          select: {
+            companyName: true,
+            name: true,
+          },
+        },
+        order: true,
+        items: {
+          include: {
+            product: true,
+          },
+        },
+      },
+    });
+
+    res.status(201).json({
+      success: true,
+      data: returnRecord,
+    });
+  } catch (error) {
+    console.error('Error creating return:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to create return',
     });
   }
 });
@@ -2527,6 +2676,444 @@ router.delete('/returns/:id', async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to delete return',
+    });
+  }
+});
+
+// ==================== TASKS ====================
+
+/**
+ * GET /api/data/tasks
+ * Fetch all tasks (admin/employee see all, clients see their own)
+ */
+router.get('/tasks', async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).userId;
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { client: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found',
+      });
+    }
+
+    // Build where clause based on role
+    const whereClause = user.role === 'CLIENT' && user.client
+      ? { clientId: user.client.id }
+      : {};
+
+    const tasks = await prisma.task.findMany({
+      where: whereClause,
+      include: {
+        client: {
+          select: {
+            id: true,
+            companyName: true,
+            name: true,
+          },
+        },
+        assignee: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        creator: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    res.json({
+      success: true,
+      data: tasks,
+    });
+  } catch (error) {
+    console.error('Error fetching tasks:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch tasks',
+    });
+  }
+});
+
+/**
+ * GET /api/data/tasks/:id
+ * Fetch a single task by ID
+ */
+router.get('/tasks/:id', async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).userId;
+    const { id } = req.params;
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { client: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found',
+      });
+    }
+
+    const task = await prisma.task.findUnique({
+      where: { id },
+      include: {
+        client: {
+          select: {
+            id: true,
+            companyName: true,
+            name: true,
+          },
+        },
+        assignee: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        creator: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        fromMessage: {
+          select: {
+            id: true,
+            content: true,
+            createdAt: true,
+            sender: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        error: 'Task not found',
+      });
+    }
+
+    // Check authorization for clients
+    if (user.role === 'CLIENT' && task.clientId !== user.client?.id) {
+      return res.status(403).json({
+        success: false,
+        error: 'Unauthorized',
+      });
+    }
+
+    res.json({
+      success: true,
+      data: task,
+    });
+  } catch (error) {
+    console.error('Error fetching task:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to fetch task',
+    });
+  }
+});
+
+/**
+ * POST /api/data/tasks
+ * Create a new task
+ */
+router.post('/tasks', async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).userId;
+    const {
+      title,
+      description,
+      type,
+      priority,
+      status,
+      dueDate,
+      assigneeId,
+      clientId,
+      notifyCustomer,
+    } = req.body;
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { client: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found',
+      });
+    }
+
+    // Validate required fields
+    if (!title) {
+      return res.status(400).json({
+        success: false,
+        error: 'Task title is required',
+      });
+    }
+
+    // Determine clientId based on role
+    let taskClientId: string | null = null;
+    if (user.role === 'CLIENT') {
+      taskClientId = user.client?.id || null;
+    } else if (clientId) {
+      // Admin/Employee can specify a client
+      taskClientId = clientId;
+    }
+
+    // Generate task ID
+    const taskIdDisplay = `TASK-${Date.now().toString(36).toUpperCase()}`;
+
+    const task = await prisma.task.create({
+      data: {
+        taskId: taskIdDisplay,
+        title,
+        description: description || null,
+        type: type || 'OTHER',
+        priority: priority || 'LOW',
+        status: status || 'OPEN',
+        dueDate: dueDate ? new Date(dueDate) : null,
+        assigneeId: assigneeId || null,
+        clientId: taskClientId,
+        creatorId: userId,
+        notifyCustomer: notifyCustomer || false,
+      },
+      include: {
+        client: {
+          select: {
+            id: true,
+            companyName: true,
+            name: true,
+          },
+        },
+        assignee: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        creator: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    res.status(201).json({
+      success: true,
+      data: task,
+    });
+  } catch (error) {
+    console.error('Error creating task:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to create task',
+    });
+  }
+});
+
+/**
+ * PUT /api/data/tasks/:id
+ * Update an existing task
+ */
+router.put('/tasks/:id', async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).userId;
+    const { id } = req.params;
+    const {
+      title,
+      description,
+      type,
+      priority,
+      status,
+      dueDate,
+      assigneeId,
+      clientId,
+      notifyCustomer,
+    } = req.body;
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { client: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found',
+      });
+    }
+
+    const existingTask = await prisma.task.findUnique({
+      where: { id },
+    });
+
+    if (!existingTask) {
+      return res.status(404).json({
+        success: false,
+        error: 'Task not found',
+      });
+    }
+
+    // Check authorization for clients
+    if (user.role === 'CLIENT' && existingTask.clientId !== user.client?.id) {
+      return res.status(403).json({
+        success: false,
+        error: 'Unauthorized',
+      });
+    }
+
+    // Build update data
+    const updateData: any = {};
+    if (title !== undefined) updateData.title = title;
+    if (description !== undefined) updateData.description = description;
+    if (type !== undefined) updateData.type = type;
+    if (priority !== undefined) updateData.priority = priority;
+    if (status !== undefined) {
+      updateData.status = status;
+      // If task is being completed/closed, set completedAt
+      if (status === 'COMPLETED' || status === 'CLOSED') {
+        updateData.completedAt = new Date();
+      }
+    }
+    if (dueDate !== undefined) updateData.dueDate = dueDate ? new Date(dueDate) : null;
+    if (assigneeId !== undefined) updateData.assigneeId = assigneeId || null;
+    if (notifyCustomer !== undefined) updateData.notifyCustomer = notifyCustomer;
+    
+    // Only admins/employees can change clientId
+    if (clientId !== undefined && user.role !== 'CLIENT') {
+      updateData.clientId = clientId || null;
+    }
+
+    const task = await prisma.task.update({
+      where: { id },
+      data: updateData,
+      include: {
+        client: {
+          select: {
+            id: true,
+            companyName: true,
+            name: true,
+          },
+        },
+        assignee: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+        creator: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    res.json({
+      success: true,
+      data: task,
+    });
+  } catch (error) {
+    console.error('Error updating task:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to update task',
+    });
+  }
+});
+
+/**
+ * DELETE /api/data/tasks/:id
+ * Delete a task
+ */
+router.delete('/tasks/:id', async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).userId;
+    const { id } = req.params;
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { client: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found',
+      });
+    }
+
+    const task = await prisma.task.findUnique({
+      where: { id },
+    });
+
+    if (!task) {
+      return res.status(404).json({
+        success: false,
+        error: 'Task not found',
+      });
+    }
+
+    // Check authorization - only creator, admin, or superadmin can delete
+    const canDelete = 
+      task.creatorId === userId ||
+      user.role === 'ADMIN' ||
+      user.role === 'SUPER_ADMIN';
+
+    if (!canDelete) {
+      return res.status(403).json({
+        success: false,
+        error: 'Unauthorized to delete this task',
+      });
+    }
+
+    await prisma.task.delete({
+      where: { id },
+    });
+
+    res.json({
+      success: true,
+      message: 'Task deleted successfully',
+    });
+  } catch (error) {
+    console.error('Error deleting task:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to delete task',
     });
   }
 });

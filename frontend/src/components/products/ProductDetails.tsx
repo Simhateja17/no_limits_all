@@ -237,6 +237,7 @@ export function ProductDetails({ productId, backUrl }: ProductDetailsProps) {
 
   // Product image state
   const [productImage, setProductImage] = useState<string | null>(null);
+  const [imageError, setImageError] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -252,6 +253,8 @@ export function ProductDetails({ productId, backUrl }: ProductDetailsProps) {
         alert('File size must be less than 10MB');
         return;
       }
+      // Reset image error state
+      setImageError(false);
       // Create preview URL
       const reader = new FileReader();
       reader.onloadend = () => {
@@ -580,10 +583,11 @@ export function ProductDetails({ productId, backUrl }: ProductDetailsProps) {
                 style={{ display: 'none' }}
               />
               {/* Product image or placeholder */}
-              {productImage || productDetails?.imageUrl ? (
+              {(productImage || productDetails?.imageUrl) && !imageError ? (
                 <img
                   src={productImage || productDetails?.imageUrl || ''}
                   alt={productDetails?.productName || 'Product'}
+                  onError={() => setImageError(true)}
                   style={{
                     width: '100%',
                     height: '100%',

@@ -40,6 +40,7 @@ interface Return {
 interface ReturnsTableProps {
   showClientColumn: boolean;
   basePath?: string;
+  canCreateReturn?: boolean;
 }
 
 // Status tag component - needs translations
@@ -92,7 +93,7 @@ const StatusTag = ({ status, t, compact = false }: { status: ReturnStatus; t: (k
   );
 };
 
-export function ReturnsTable({ showClientColumn, basePath = '/admin/returns' }: ReturnsTableProps) {
+export function ReturnsTable({ showClientColumn, basePath = '/admin/returns', canCreateReturn = false }: ReturnsTableProps) {
   const router = useRouter();
   const t = useTranslations('returns');
   const tCommon = useTranslations('common');
@@ -405,15 +406,42 @@ export function ReturnsTable({ showClientColumn, basePath = '/admin/returns' }: 
         </div>
         )}
 
-        {/* Invisible spacer to match height of pages with Create button - hidden on mobile */}
-        {!isMobile && (
-        <div
+        {/* Create Return Button - Only shown for admin/employee */}
+        {canCreateReturn && (
+        <button
+          onClick={() => router.push(`${basePath}/create`)}
+          className="w-full md:w-auto"
           style={{
             height: 'clamp(32px, 2.8vw, 38px)',
+            borderRadius: '6px',
+            paddingTop: 'clamp(7px, 0.66vw, 9px)',
+            paddingRight: 'clamp(13px, 1.25vw, 17px)',
+            paddingBottom: 'clamp(7px, 0.66vw, 9px)',
+            paddingLeft: 'clamp(13px, 1.25vw, 17px)',
+            backgroundColor: '#003450',
+            boxShadow: '0px 1px 2px 0px rgba(0, 0, 0, 0.05)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            border: 'none',
+            whiteSpace: 'nowrap',
             marginBottom: 'clamp(8px, 0.88vw, 12px)',
-            visibility: 'hidden',
           }}
-        />
+        >
+          <span
+            style={{
+              fontFamily: 'Inter, sans-serif',
+              fontWeight: 500,
+              fontSize: 'clamp(12px, 1.03vw, 14px)',
+              lineHeight: '20px',
+              color: '#FFFFFF',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {t('createReturn')}
+          </span>
+        </button>
         )}
       </div>
 
@@ -653,9 +681,9 @@ export function ReturnsTable({ showClientColumn, basePath = '/admin/returns' }: 
       {/* Pagination */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4" style={{ paddingTop: '12px' }}>
         <span className="text-sm text-gray-700 order-2 sm:order-1" style={{ fontFamily: 'Inter, sans-serif' }}>
-          Showing <span style={{ fontWeight: 500 }}>{filteredReturns.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0}</span> to{' '}
-          <span style={{ fontWeight: 500 }}>{Math.min(currentPage * itemsPerPage, filteredReturns.length)}</span> of{' '}
-          <span style={{ fontWeight: 500 }}>{filteredReturns.length}</span> results
+          {tCommon('showing')} <span style={{ fontWeight: 500 }}>{filteredReturns.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0}</span> {tCommon('to')}{' '}
+          <span style={{ fontWeight: 500 }}>{Math.min(currentPage * itemsPerPage, filteredReturns.length)}</span> {tCommon('of')}{' '}
+          <span style={{ fontWeight: 500 }}>{filteredReturns.length}</span> {tCommon('results')}
         </span>
 
         <div className="flex items-center gap-3 order-1 sm:order-2">

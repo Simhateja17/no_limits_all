@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { dataApi, DashboardEvent } from '@/lib/data-api';
+import { useAuthStore } from '@/lib/store';
 
 interface Event {
   id: string;
@@ -21,6 +22,7 @@ interface NewEventsProps {
 export function NewEvents({ events: propEvents, onViewAll }: NewEventsProps) {
   const t = useTranslations('dashboard');
   const router = useRouter();
+  const { user } = useAuthStore();
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -59,13 +61,20 @@ export function NewEvents({ events: propEvents, onViewAll }: NewEventsProps) {
   }, [propEvents]);
 
   const handleEventClick = (event: Event) => {
-    // Navigate to the appropriate page based on event type
-    if (event.type === 'return') {
-      router.push('/admin/returns');
+    // Get the base path based on user role
+    const roleBasePath = user?.role === 'CLIENT' ? '/client' : user?.role === 'EMPLOYEE' ? '/employee' : '/admin';
+
+    // Navigate to the appropriate page based on event type and entityId
+    if (event.type === 'order_attention' && event.entityId) {
+      // For orders, navigate to the specific order detail page
+      router.push(`${roleBasePath}/orders/${event.entityId}`);
+    } else if (event.type === 'return') {
+      router.push(`${roleBasePath}/returns`);
     } else if (event.type === 'inbound') {
-      router.push('/admin/inbounds');
-    } else if (event.type === 'order_attention') {
-      router.push('/admin/orders');
+      router.push(`${roleBasePath}/inbounds`);
+    } else {
+      // Fallback to orders list
+      router.push(`${roleBasePath}/orders`);
     }
   };
 

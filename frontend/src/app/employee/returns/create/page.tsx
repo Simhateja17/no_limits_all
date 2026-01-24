@@ -1,12 +1,12 @@
 'use client';
 
 import { DashboardLayout } from '@/components/layout';
-import { ReturnsTable } from '@/components/returns';
+import { CreateReturn } from '@/components/returns';
 import { useAuthStore } from '@/lib/store';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
-export default function EmployeeReturnsPage() {
+export default function EmployeeCreateReturnPage() {
   const { user, isAuthenticated } = useAuthStore();
   const router = useRouter();
 
@@ -20,13 +20,10 @@ export default function EmployeeReturnsPage() {
     return null;
   }
 
-  // Show client column for employees (warehouse labor view)
-  const showClientColumn = true;
-
   return (
     <DashboardLayout>
       <div className="w-full px-[5.2%] py-8">
-        <ReturnsTable showClientColumn={showClientColumn} basePath="/employee/returns" canCreateReturn={true} />
+        <CreateReturn backUrl="/employee/returns" />
       </div>
     </DashboardLayout>
   );

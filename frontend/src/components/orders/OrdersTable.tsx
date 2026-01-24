@@ -165,7 +165,7 @@ const OrderCard = ({
     >
       <div className="flex items-start justify-between mb-3">
         <div>
-          <p className="text-sm font-medium text-gray-900">#{order.orderId}</p>
+          <p className="text-sm font-medium text-gray-900">#{order.orderId.replace(/^#/, '')}</p>
           <p className="text-xs text-gray-500 mt-0.5">{formatOrderDate(order.orderDate)}</p>
         </div>
         <StatusTag status={order.status} t={t} compact />
@@ -984,7 +984,7 @@ export function OrdersTable({ showClientColumn, basePath = '/admin/orders' }: Or
                 color: '#111827',
               }}
             >
-              #{order.orderId}
+              #{order.orderId.replace(/^#/, '')}
             </span>
             {showClientColumn && (
               <span

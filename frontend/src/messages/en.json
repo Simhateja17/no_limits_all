@@ -47,7 +47,14 @@
     "detailsOfReturn": "Details of return",
     "add": "Add",
     "remove": "Remove",
-    "finish": "Finish"
+    "finish": "Finish",
+    "saveChanges": "Save changes",
+    "changedMind": "Changed Mind",
+    "other": "Other",
+    "addItem": "Add Item",
+    "warehouseNotes": "Warehouse Notes",
+    "email": "Email",
+    "saving": "Saving..."
   },
   "login": {
     "storeOwner": "Fulfillment Client",
@@ -351,7 +358,15 @@
     "acceptable": "Acceptable",
     "disposed": "Disposed",
     "bookedInAgain": "Booked in again",
-    "returnImages": "Return Images"
+    "returnImages": "Return Images",
+    "createReturn": "Create Return",
+    "enterOrderId": "Enter order ID (optional)",
+    "enterCustomerName": "Enter customer name",
+    "enterCustomerEmail": "Enter customer email",
+    "enterReturnReason": "Enter return reason details",
+    "enterNotes": "Enter notes",
+    "enterWarehouseNotes": "Enter warehouse notes",
+    "atLeastOneItemRequired": "At least one item with SKU or product name is required"
   },
   "chat": {
     "title": "Chat",
@@ -387,7 +402,12 @@
     "orderProcessing": "Order Processing",
     "inventoryCheck": "Inventory Check",
     "noTasksFound": "No tasks found",
-    "returns": "Returns"
+    "returns": "Returns",
+    "chatContext": "Chat Context",
+    "noChatContext": "No chat context available for this task",
+    "markAsClosed": "Mark as Closed",
+    "reopenTask": "Reopen Task",
+    "taskDetailsComingSoon": "Task details coming soon"
   },
   "channels": {
     "title": "Sales Channels",

@@ -19,8 +19,8 @@ interface OptimisticMessage extends ChatMessage {
 // Admin contact for client chat
 const adminContact: Contact = {
   id: 'admin',
-  name: 'Admin Support',
-  avatar: '/imageofchat.png',
+  name: 'Support',
+  avatar: '',
   lastMessage: '',
   lastMessageDate: new Date().toISOString(),
   isOnline: true,
@@ -270,7 +270,7 @@ export default function ClientChatPage() {
           isTyping={isTyping}
           typingUser={
             isTyping
-              ? { name: 'Admin Support', avatar: '/imageofchat.png' }
+              ? { name: 'Support', avatar: '' }
               : undefined
           }
           showCreateTask={false}

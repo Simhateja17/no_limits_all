@@ -834,7 +834,7 @@ export function FFNAccountDetails() {
               borderRadius: '6px',
               border: 'none',
               padding: 'clamp(10px, 0.98vw, 14px) clamp(16px, 1.57vw, 22px)',
-              backgroundColor: '#059669',
+              backgroundColor: '#6BAC4D',
               cursor: reauthenticating ? 'not-allowed' : 'pointer',
               opacity: reauthenticating ? 0.6 : 1,
               fontFamily: 'Inter, sans-serif',
@@ -905,6 +905,9 @@ export function FFNAccountDetails() {
                 fontWeight: 500,
                 fontSize: 'clamp(12px, 1.03vw, 14px)',
                 color: '#374151',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
               }}
             >
               {testing ? `${tCommon('loading')}...` : t('testConnection')}
@@ -923,6 +926,9 @@ export function FFNAccountDetails() {
                 fontWeight: 500,
                 fontSize: 'clamp(12px, 1.03vw, 14px)',
                 color: '#374151',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
               }}
             >
               {t('reconfigure')}

@@ -1,26 +1,17 @@
 'use client';
 
 import { DashboardLayout } from '@/components/layout';
-import { StatCard } from '@/components/dashboard';
+import { ProcessedOrdersChart, QuickChat, NewEvents } from '@/components/dashboard';
 import { useAuthStore } from '@/lib/store';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-
-interface DashboardStats {
-  openOrders: number;
-  errorOrders: number;
-  avgClickRate: string;
-  period: string;
-}
 
 export default function ClientDashboardPage() {
   const { user, isAuthenticated } = useAuthStore();
   const router = useRouter();
   const t = useTranslations('dashboard');
   const [isCheckingSetup, setIsCheckingSetup] = useState(true);
-  const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [isLoadingStats, setIsLoadingStats] = useState(true);
 
   useEffect(() => {
     if (!isAuthenticated || user?.role !== 'CLIENT') {
@@ -47,7 +38,7 @@ export default function ClientDashboardPage() {
 
         if (channelsResponse.ok) {
           const channelsData = await channelsResponse.json();
-          
+
           // If no channels, redirect to setup
           if (!channelsData.channels || channelsData.channels.length === 0) {
             router.push('/client/setup');
@@ -64,43 +55,6 @@ export default function ClientDashboardPage() {
 
     checkSetupStatus();
   }, [isAuthenticated, user, router]);
-
-  // Fetch dashboard stats
-  useEffect(() => {
-    const fetchDashboardStats = async () => {
-      if (!isAuthenticated || user?.role !== 'CLIENT' || isCheckingSetup) {
-        return;
-      }
-
-      try {
-        const token = localStorage.getItem('accessToken');
-        if (!token) {
-          setIsLoadingStats(false);
-          return;
-        }
-
-        const response = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}/data/dashboard/stats`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-
-        if (response.ok) {
-          const data = await response.json();
-          setStats(data.data);
-        } else {
-          console.error('Failed to fetch dashboard stats');
-        }
-      } catch (err) {
-        console.error('Error fetching dashboard stats:', err);
-      } finally {
-        setIsLoadingStats(false);
-      }
-    };
-
-    fetchDashboardStats();
-  }, [isAuthenticated, user, isCheckingSetup]);
 
   if (!isAuthenticated || user?.role !== 'CLIENT') {
     return null;
@@ -123,10 +77,15 @@ export default function ClientDashboardPage() {
   return (
     <DashboardLayout>
       <div
-        className="w-full px-[5.2%] py-8"
-        style={{ maxWidth: '100%' }}
+        style={{
+          width: '100%',
+          padding: '32px 5.2%',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '24px',
+        }}
       >
-        {/* Last 30 Days Header */}
+        {/* Header - Overview */}
         <h1
           style={{
             fontFamily: 'Inter, sans-serif',
@@ -134,31 +93,54 @@ export default function ClientDashboardPage() {
             fontSize: '18px',
             lineHeight: '24px',
             color: '#111827',
-            marginBottom: '20px',
+            margin: 0,
           }}
         >
-          {t('last30Days')}
+          {t('title')}
         </h1>
 
-        {/* Stats Cards Container */}
+        {/* Divider */}
         <div
-          className="flex flex-col"
           style={{
-            maxWidth: '247px',
-            gap: '20px',
+            width: '100%',
+            height: '1px',
+            background: '#E5E7EB',
+          }}
+        />
+
+        {/* Main Content */}
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '31px',
+            width: '100%',
           }}
         >
-          {isLoadingStats ? (
-            <div className="text-gray-500">Loading stats...</div>
-          ) : stats ? (
-            <>
-              <StatCard label={t('openOrders')} value={stats.openOrders.toString()} />
-              <StatCard label={t('errorOrders')} value={stats.errorOrders.toString()} />
-              <StatCard label={t('avgClickRate')} value={stats.avgClickRate} />
-            </>
-          ) : (
-            <div className="text-gray-500">No stats available</div>
-          )}
+          {/* Processed Orders Chart - Full width */}
+          <div style={{ width: '100%' }}>
+            <ProcessedOrdersChart />
+          </div>
+
+          {/* Bottom Section - Quick Chat and New Events */}
+          <div
+            style={{
+              display: 'grid',
+              gap: '20px',
+              width: '100%',
+            }}
+            className="grid-cols-1 lg:grid-cols-[1.1fr_1fr]"
+          >
+            {/* Quick Chat */}
+            <div style={{ minWidth: 0 }}>
+              <QuickChat />
+            </div>
+
+            {/* New Events */}
+            <div style={{ minWidth: 0 }}>
+              <NewEvents />
+            </div>
+          </div>
         </div>
       </div>
     </DashboardLayout>
